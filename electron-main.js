@@ -103,18 +103,21 @@ ipcMain.handle('backend-status', async () => {
 // System information handler
 ipcMain.handle('get-system-info', async () => {
     try {
-        const [cpu, mem, graphics, currentLoad] = await Promise.all([
+        const [cpu, mem, graphics, currentLoad, cpuTemp, battery] = await Promise.all([
             si.cpu(),
             si.mem(),
             si.graphics(),
-            si.currentLoad()
+            si.currentLoad(),
+            si.cpuTemperature(),
+            si.battery()
         ]);
 
         const gpuController = graphics.controllers[0] || {};
 
         return {
             cpu: {
-                load: Math.round(currentLoad.currentLoad)
+                load: Math.round(currentLoad.currentLoad),
+                temp: cpuTemp.main || cpuTemp.cores?.[0] || null // CPU temp (may be null on Windows)
             },
             memory: {
                 used: (mem.used / 1024 / 1024 / 1024).toFixed(1), // GB
@@ -126,14 +129,20 @@ ipcMain.handle('get-system-info', async () => {
                 vramTotal: gpuController.vram ? (gpuController.vram / 1024).toFixed(0) : 12,
                 load: gpuController.utilizationGpu || gpuController.memoryUtilization || null, // Often null on Windows
                 temp: gpuController.temperatureGpu || null // Often null on Windows
+            },
+            psu: {
+                watts: battery.isCharging && battery.acConnected ?
+                    Math.round((battery.currentCapacity / 100) * 65) : // Estimate based on battery
+                    null // PSU wattage not available on most systems
             }
         };
     } catch (error) {
         console.error('[SystemInfo] Error:', error);
         return {
-            cpu: { load: 0 },
+            cpu: { load: 0, temp: null },
             memory: { used: 0, total: 64 },
-            gpu: { name: 'Unknown', vramUsed: '0', vramTotal: 12, load: null, temp: null }
+            gpu: { name: 'Unknown', vramUsed: '0', vramTotal: 12, load: null, temp: null },
+            psu: { watts: null }
         };
     }
 });

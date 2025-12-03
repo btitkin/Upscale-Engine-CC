@@ -27,6 +27,7 @@ const App: React.FC = () => {
   const [batchMode, setBatchMode] = useState(true);
   const [selectedQueueIndex, setSelectedQueueIndex] = useState(0);
   const [metadataCollapsed, setMetadataCollapsed] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   // Progress State
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -76,18 +77,32 @@ const App: React.FC = () => {
     setState(AppState.PROCESSING);
     setProgress({ current: 0, total: queue.length });
 
+    // Create abort controller
+    const controller = new AbortController();
+    setAbortController(controller);
+
     const newResults: UpscaleResult[] = [];
 
-    // Sequential Processing
-    for (let i = 0; i < queue.length; i++) {
-      setProgress({ current: i + 1, total: queue.length });
+    try {
+      // Sequential Processing
+      for (let i = 0; i < queue.length; i++) {
+        // Check if aborted
+        if (controller.signal.aborted) {
+          console.log('Processing cancelled by user');
+          break;
+        }
 
-      try {
-        const data = await processImageLocally(queue[i], settings);
-        newResults.push(data);
-      } catch (error: any) {
-        console.error(`Processing failed for ${queue[i].name}`, error);
+        setProgress({ current: i + 1, total: queue.length });
+
+        try {
+          const data = await processImageLocally(queue[i], settings);
+          newResults.push(data);
+        } catch (error: any) {
+          console.error(`Processing failed for ${queue[i].name}`, error);
+        }
       }
+    } finally {
+      setAbortController(null);
     }
 
     if (newResults.length > 0) {
@@ -96,7 +111,16 @@ const App: React.FC = () => {
       setCurrentResultIndex(0);
     } else {
       setState(AppState.IDLE);
-      alert("Processing failed. Please check your local server console.");
+      if (!controller.signal.aborted) {
+        alert("Processing failed. Please check your local server console.");
+      }
+    }
+  };
+
+  const cancelProcessing = () => {
+    if (abortController) {
+      abortController.abort();
+      setState(AppState.IDLE);
     }
   };
 
@@ -212,9 +236,15 @@ const App: React.FC = () => {
               </div>
               <div className="text-center">
                 <p className="text-xl font-bold mb-2">Processing Images...</p>
-                <p className="text-white/60">
+                <p className="text-white/60 mb-4">
                   {progress.current} of {progress.total}
                 </p>
+                <button
+                  onClick={cancelProcessing}
+                  className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold flex items-center gap-2 mx-auto transition-colors"
+                >
+                  <span className="text-xl">✕</span> STOP PROCESSING
+                </button>
               </div>
             </div>
           ) : queueImages.length > 0 ? (
