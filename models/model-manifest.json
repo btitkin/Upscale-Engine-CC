@@ -1,0 +1,23 @@
+{
+  "upscale": {
+    "name": "RealESRGAN x4plus",
+    "filename": "RealESRGAN_x4plus.pth",
+    "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
+    "size": 67040989,
+    "type": "esrgan"
+  },
+  "sdxl": {
+    "name": "Juggernaut XL 9.0",
+    "filename": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
+    "url": "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
+    "size": 7110000000,
+    "type": "sdxl"
+  },
+  "qwen": {
+    "name": "Qwen Image Edit 2509",
+    "filename": "Qwen-Image-Edit-2509-Q4_K_M.gguf",
+    "url": "https://huggingface.co/QuantStack/Qwen-Image-Edit-2509-GGUF/resolve/main/Qwen-Image-Edit-2509-Q4_K_M.gguf",
+    "size": 13100000000,
+    "type": "gguf"
+  }
+}

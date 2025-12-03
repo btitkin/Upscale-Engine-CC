@@ -1,0 +1,290 @@
+import React, { useState } from 'react';
+import TitleBar from './components/TitleBar';
+import Sidebar from './components/Sidebar';
+import ImageUploader from './components/ImageUploader';
+import ComparisonView from './components/ComparisonView';
+import BatchQueue from './components/BatchQueue';
+import MetadataPanel from './components/MetadataPanel';
+import { processImageLocally } from './services/upscaleService';
+import { AppState, UpscaleResult, ProcessorSettings } from './types';
+import { Layers } from 'lucide-react';
+
+interface QueueImage {
+  id: string;
+  file: File;
+  preview: string;
+  selected: boolean;
+  processed: boolean;
+  processing: boolean;
+}
+
+const App: React.FC = () => {
+  const [state, setState] = useState<AppState>(AppState.IDLE);
+  const [queue, setQueue] = useState<File[]>([]);
+  const [queueImages, setQueueImages] = useState<QueueImage[]>([]);
+  const [results, setResults] = useState<UpscaleResult[]>([]);
+  const [currentResultIndex, setCurrentResultIndex] = useState(0);
+  const [batchMode, setBatchMode] = useState(true);
+  const [selectedQueueIndex, setSelectedQueueIndex] = useState(0);
+  const [metadataCollapsed, setMetadataCollapsed] = useState(false);
+
+  // Progress State
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+
+  // Settings Default to Localhost Backend
+  const [settings, setSettings] = useState<ProcessorSettings>({
+    backendUrl: 'http://127.0.0.1:5555',
+    upscaler: '4x-UltraSharp',
+    checkpoint: '',
+
+    // Toggles Defaults
+    enableUpscale: true,
+    enableTiling: true,
+    enableRealism: false,
+    enableSkin: true,
+    enableHiresFix: true,
+
+    // Values
+    upscaleFactor: 2,
+    denoisingStrength: 0.35,
+    cfgScale: 7.0,
+    prompt: ''
+  });
+
+  const handleUpload = (files: File[]) => {
+    setQueue(files);
+
+    // Create queue images with previews
+    const newQueueImages: QueueImage[] = files.map((file, index) => ({
+      id: `img-${Date.now()}-${index}`,
+      file,
+      preview: URL.createObjectURL(file),
+      selected: true, // Select all by default
+      processed: false,
+      processing: false
+    }));
+
+    setQueueImages(newQueueImages);
+    setResults([]);
+    setCurrentResultIndex(0);
+    setState(AppState.IDLE);
+  };
+
+  const processBatch = async () => {
+    if (queue.length === 0) return;
+
+    setState(AppState.PROCESSING);
+    setProgress({ current: 0, total: queue.length });
+
+    const newResults: UpscaleResult[] = [];
+
+    // Sequential Processing
+    for (let i = 0; i < queue.length; i++) {
+      setProgress({ current: i + 1, total: queue.length });
+
+      try {
+        const data = await processImageLocally(queue[i], settings);
+        newResults.push(data);
+      } catch (error: any) {
+        console.error(`Processing failed for ${queue[i].name}`, error);
+      }
+    }
+
+    if (newResults.length > 0) {
+      setResults(newResults);
+      setState(AppState.RESULTS);
+      setCurrentResultIndex(0);
+    } else {
+      setState(AppState.IDLE);
+      alert("Processing failed. Please check your local server console.");
+    }
+  };
+
+  const handleClose = () => {
+    setResults([]);
+    setQueue([]);
+    setState(AppState.IDLE);
+    setProgress({ current: 0, total: 0 });
+  };
+
+  const handleNext = () => {
+    if (currentResultIndex < results.length - 1) {
+      setCurrentResultIndex(prev => prev + 1);
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentResultIndex > 0) {
+      setCurrentResultIndex(prev => prev - 1);
+    }
+  };
+
+  // Batch Queue Control Functions
+  const handleSelectToggle = (id: string) => {
+    setQueueImages(prev => prev.map(img =>
+      img.id === id ? { ...img, selected: !img.selected } : img
+    ));
+  };
+
+  const handleSelectAll = () => {
+    setQueueImages(prev => prev.map(img => ({ ...img, selected: true })));
+  };
+
+  const handleSelectNone = () => {
+    setQueueImages(prev => prev.map(img => ({ ...img, selected: false })));
+  };
+
+  const handleDelete = (ids: string[]) => {
+    // Remove from queue images
+    const remainingImages = queueImages.filter(img => !ids.includes(img.id));
+    setQueueImages(remainingImages);
+
+    // Update main queue
+    const keepFiles = remainingImages.map(img => img.file);
+    setQueue(keepFiles);
+
+    // Cleanup preview URLs
+    queueImages
+      .filter(img => ids.includes(img.id))
+      .forEach(img => URL.revokeObjectURL(img.preview));
+  };
+
+  const handleBatchModeToggle = () => {
+    setBatchMode(!batchMode);
+  };
+
+  // File input ref for adding more images
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleAddMore = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      handleUpload(files);
+    }
+  };
+
+  return (
+    <div className="h-screen w-screen flex flex-col bg-app-bg text-app-text overflow-hidden">
+      <TitleBar />
+
+      {/* Hidden file input for adding more images */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*"
+        onChange={handleFileInputChange}
+        style={{ display: 'none' }}
+      />
+
+      <div className="flex-1 flex overflow-hidden" style={{ paddingBottom: queueImages.length >= 2 ? '200px' : '0' }}>
+        {/* Left Sidebar - Always visible */}
+        <Sidebar
+          settings={settings}
+          setSettings={setSettings}
+          disabled={state === AppState.PROCESSING}
+          onProcess={processBatch}
+          queueCount={queueImages.filter(img => img.selected).length}
+        />
+
+        {/* Main Content Area */}
+        <div className="flex-1 relative bg-[#09090b] flex flex-col items-center justify-center overflow-hidden">
+          {state === AppState.RESULTS && results.length > 0 ? (
+            <ComparisonView
+              result={results[currentResultIndex]}
+              onClose={() => setState(AppState.IDLE)}
+              onNext={() => setCurrentResultIndex((prev) => prev + 1)}
+              onPrev={() => setCurrentResultIndex((prev) => prev - 1)}
+              hasNext={currentResultIndex < results.length - 1}
+              hasPrev={currentResultIndex > 0}
+              currentCount={currentResultIndex + 1}
+              totalCount={results.length}
+            />
+          ) : state === AppState.PROCESSING ? (
+            <div className="flex flex-col items-center gap-6">
+              <div className="relative w-32 h-32">
+                <div className="absolute inset-0 rounded-full border-4 border-white/10"></div>
+                <div className="absolute inset-0 rounded-full border-4 border-t-emerald-500 animate-spin"></div>
+              </div>
+              <div className="text-center">
+                <p className="text-xl font-bold mb-2">Processing Images...</p>
+                <p className="text-white/60">
+                  {progress.current} of {progress.total}
+                </p>
+              </div>
+            </div>
+          ) : queueImages.length > 0 ? (
+            <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-8">
+              <img
+                src={queueImages[selectedQueueIndex]?.preview || queueImages[0]?.preview}
+                alt="Preview"
+                className="max-w-[80%] max-h-[70%] object-contain rounded shadow-2xl"
+              />
+            </div>
+                  </div>
+      </div>
+      ) : (
+      <ImageUploader onUpload={handleUpload} isLoading={false} />
+              )}
+    </div>
+
+      {/* Metadata Panel - Show for queue images when not in results */ }
+  {
+    state !== AppState.RESULTS && queueImages.length > 0 && (
+      <MetadataPanel
+        imageUrl={queueImages[selectedQueueIndex]?.preview || queueImages[0]?.preview}
+        filename={queueImages[selectedQueueIndex]?.file.name || queueImages[0]?.file.name}
+        collapsed={metadataCollapsed}
+        onToggle={() => setMetadataCollapsed(!metadataCollapsed)}
+      />
+    )
+  }
+    </div >
+
+  {/* Status Bar */ }
+  < div className = "h-6 bg-app-panel border-t border-app-border flex items-center justify-between px-4 text-[10px] text-app-muted select-none relative overflow-hidden" >
+    {/* Visual Progress Bar */ }
+{
+  state === AppState.PROCESSING && (
+    <div
+      className="absolute inset-y-0 left-0 bg-white/10 transition-all duration-300 ease-out z-0"
+      style={{ width: `${(progress.current / progress.total) * 100}%` }}
+    />
+  )
+}
+
+    <div className="flex gap-4 relative z-10">
+      <span className="flex items-center gap-1.5">
+        <div className={`w-1.5 h-1.5 rounded-full ${state === AppState.PROCESSING ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+        {state === AppState.PROCESSING ? `PROCESSING: ${progress.current} / ${progress.total}` : 'SYSTEM IDLE'}
+      </span>
+      <span className="uppercase">BACKEND: {settings.backendUrl}</span>
+    </div>
+    <div className="relative z-10 flex gap-4">
+      <span>HyperReal Engine v2.1</span>
+    </div>
+  </div >
+
+  {/* Batch Queue - Bottom Panel - Only show when 2+ images */ }
+{
+  queueImages.length >= 2 && (
+    <BatchQueue
+      images={queueImages}
+      onSelectToggle={handleSelectToggle}
+      onSelectAll={handleSelectAll}
+      onSelectNone={handleSelectNone}
+      onDelete={handleDelete}
+      batchMode={batchMode}
+      onBatchModeToggle={handleBatchModeToggle}
+    />
+  )
+}
+    </div >
+  );
+};
+
+export default App;

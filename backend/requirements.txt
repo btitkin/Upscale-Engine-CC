@@ -1,0 +1,25 @@
+flask==3.1.0
+flask-cors==5.0.0
+torch==2.5.1
+torchvision==0.20.1
+pillow==11.0.0
+requests==2.32.3
+numpy==1.26.4
+
+# ESRGAN upscaling (Phase 1)
+# Using Git version of basicsr for PyTorch 2.5 compatibility
+git+https://github.com/XPixelGroup/BasicSR.git
+realesrgan==0.3.0
+
+# SDXL support (Phase 2)
+diffusers==0.31.0
+transformers==4.46.0
+accelerate==1.2.0
+safetensors==0.4.5
+
+# Qwen GGUF multimodal (Phase 3)
+llama-cpp-python==0.3.2
+  # Note: Use latest version with multimodal support
+
+
+

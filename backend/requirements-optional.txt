@@ -1,0 +1,8 @@
+# Optional dependencies for performance optimization
+# Install AFTER main requirements.txt
+
+# xformers - GPU acceleration for diffusers (SDXL)
+# Makes SDXL inference ~30% faster
+# NOTE: Requires PyTorch to be installed first
+# Windows users may need Visual Studio Build Tools
+xformers==0.0.28.post3

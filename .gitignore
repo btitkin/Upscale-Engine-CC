@@ -1,0 +1,54 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Python Virtual Environment
+backend/.venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/engines/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Models (large files - don't commit to git)
+models/*.pth
+models/*.safetensors
+models/*.gguf
+models/*.temp
+
+# Temp files
+backend/__start_with_venv.bat
+backend/__backend_runner.bat
+test_*.png
+test_*_output.png
+.cleanup-notes.txt
+
+# Electron build artifacts
+release/
+out/
+dist-electron/
+*.exe
+*.dmg
+*.AppImage
