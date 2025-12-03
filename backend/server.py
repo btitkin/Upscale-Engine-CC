@@ -7,6 +7,7 @@ import os
 import sys
 import json
 import time
+import uuid
 import traceback
 from pathlib import Path
 from flask import Flask, request, jsonify
@@ -38,15 +39,17 @@ model_status = {
 }
 
 # Progress tracking (per request)
-progress_data = {}
+progress_store = {}
 
-def update_progress(request_id: str, progress: int, message: str = ""):
+def update_progress(request_id: str, step: str, progress: int, status: str = "processing"):
     """Update progress for a specific request"""
-    progress_data[request_id] = {
+    progress_store[request_id] = {
+        "status": status,
+        "step": step,
         "progress": progress,
-        "message": message,
         "timestamp": time.time()
     }
+    print(f"[Progress {request_id[:8]}] {step} - {progress}%")
 
 
 def initialize_esrgan():
@@ -190,10 +193,10 @@ def trigger_download():
 @app.route('/progress/<request_id>', methods=['GET'])
 def get_progress(request_id):
     """Get current progress for a request"""
-    if request_id in progress_data:
-        return jsonify(progress_data[request_id])
+    if request_id in progress_store:
+        return jsonify(progress_store[request_id])
     else:
-        return jsonify({"progress": 0, "message": "Not found"}), 404
+        return jsonify({"status": "unknown", "step": "Not found", "progress": 0}), 404
 
 
 @app.route('/upscale', methods=['POST'])
@@ -218,21 +221,29 @@ def upscale_image():
         data = request.get_json()
         base64_image = data.get('image')
         scale_factor = data.get('scale_factor', 4)
-        request_id = data.get('request_id', f"req_{int(time.time() * 1000)}")
+        use_tiling = data.get('use_tiling', True)
+        
+        # Generate UUID for this request
+        request_id = str(uuid.uuid4())
         
         if not base64_image:
             return jsonify({"error": "No image data"}), 400
         
+        # Tiling status message
+        tiling_msg = "Tiling: ON" if use_tiling else "Tiling: OFF"
+        
         # Progress callback
         def progress_cb(progress):
-            update_progress(request_id, progress, f"Upscaling {progress}%")
+            step = f"🔧 Upscaling {scale_factor}x [{tiling_msg}]"
+            update_progress(request_id, step, progress)
         
-        update_progress(request_id, 0, "Starting...")
+        update_progress(request_id, "🔧 Initializing upscale...", 0)
         start_time = time.time()
         
         result_base64 = esrgan_engine.upscale_from_base64(
             base64_image, 
             scale_factor,
+            use_tiling=use_tiling,
             progress_callback=progress_cb
         )
         
@@ -249,11 +260,11 @@ def upscale_image():
             input_image.width, input_image.height, scale_factor
         )
         
-        # Cleanup
-        if request_id in progress_data:
-            del progress_data[request_id]
+        # Mark complete and cleanup
+        update_progress(request_id, "✓ Upscale complete!", 100, "complete")
         
         return jsonify({
+            "request_id": request_id,
             "image": result_base64,
             "width": out_w,
             "height": out_h,
