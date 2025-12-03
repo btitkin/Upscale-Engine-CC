@@ -1,4 +1,4 @@
-# LumaScale - Desktop Application
+# Upscale Engine CC - Desktop Application
 
 Premium AI Image Upscaler with local inference. Standalone desktop application built with Electron.
 
@@ -7,9 +7,9 @@ Premium AI Image Upscaler with local inference. Standalone desktop application b
 ## ⚡ For Users - Installation
 
 ### Download & Install:
-1. Download `LumaScale-Setup.exe` from releases
+1. Download `Upscale Engine CC-Setup.exe` from releases
 2. Run installer
-3. Launch LumaScale from desktop icon or Start menu
+3. Launch Upscale Engine CC from desktop icon or Start menu
 4. On first run, app will download AI models automatically
 
 **That's it!** No Python, Node.js, or manual setup required for end users.
@@ -28,7 +28,7 @@ Premium AI Image Upscaler with local inference. Standalone desktop application b
 ```bash
 # Clone repository
 git clone <repo-url>
-cd lumascaleproject
+cd Upscale Engine CCproject
 
 # Install Node.js dependencies
 npm install
@@ -61,7 +61,7 @@ This will:
 npm run electron:build:win
 ```
 
-Output: `release/LumaScale-Setup-1.0.0.exe`
+Output: `release/Upscale Engine CC-Setup-1.0.0.exe`
 
 ### Other Build Commands:
 
@@ -87,7 +87,7 @@ npm run dist
 ## 📦 AI Models
 
 Models are auto-downloaded on first use to:
-- **Windows**: `%APPDATA%/lumascale/models/`
+- **Windows**: `%APPDATA%/Upscale Engine CC/models/`
 - **Development**: `./models/`
 
 ### Models:
@@ -102,7 +102,7 @@ Models are auto-downloaded on first use to:
 ## 🏗️ Architecture
 
 ```
-LumaScale Desktop
+Upscale Engine CC Desktop
 ├── Electron (Main Process)
 │   ├── Window Management
 │   ├── Backend Lifecycle
@@ -122,7 +122,7 @@ LumaScale Desktop
 ## 🔧 Troubleshooting
 
 ### Backend won't start
-- Check `%APPDATA%/lumascale/logs/backend.log`
+- Check `%APPDATA%/Upscale Engine CC/logs/backend.log`
 - Ensure Python 3.10+ installed (for development)
 - Reinstall dependencies: `cd backend && pip install -r requirements.txt`
 
