@@ -311,7 +311,7 @@ def enhance_image():
         base64_image = data['image']
         modules = data['modules']
         scale_factor = data.get('scale_factor', 2)
-        denoising_strength = data.get('denoising_strength', 0.4)
+        denoising_strength = data.get('denoising_strength', 0.25)  # Lower for preservation
         cfg_scale = data.get('cfg_scale', 7.0)
         prompt = data.get('prompt', '')
         

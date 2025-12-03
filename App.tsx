@@ -47,7 +47,7 @@ const App: React.FC = () => {
 
     // Values
     upscaleFactor: 2,
-    denoisingStrength: 0.35,
+    denoisingStrength: 0.25,  // Lower for better preservation
     cfgScale: 7.0,
     prompt: ''
   });

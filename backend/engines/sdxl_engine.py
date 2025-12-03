@@ -89,7 +89,12 @@ class SDXLEngine:
             (positive_prompt, negative_prompt)
         """
         positive = ["masterpiece", "best quality", "8k uhd", "highly detailed"]
-        negative = ["blur", "low quality", "lowres", "artifacts", "watermark", "text", "jpeg artifacts"]
+        negative = [
+            "blur", "low quality", "lowres", "artifacts", "watermark", "text", "jpeg artifacts",
+            "deformed", "disfigured", "mutation", "mutated",  # Prevent mutations
+            "different face", "altered features", "changed appearance",  # Face preservation
+            "extra limbs", "bad anatomy", "bad proportions"  # Anatomy preservation
+        ]
         
         # Add user's base prompt
         if base_prompt:
@@ -135,7 +140,7 @@ class SDXLEngine:
         input_image: Image.Image,
         modules: Dict[str, bool],
         prompt: str = "",
-        denoising_strength: float = 0.4,
+        denoising_strength: float = 0.25,  # Lowered from 0.4 for better preservation
         cfg_scale: float = 7.0,
         steps: int = 25,
         seed: Optional[int] = None
@@ -252,18 +257,6 @@ class SDXLEngine:
         elif input_image.mode != 'RGB':
             input_image = input_image.convert('RGB')
         
-        # Enhance
-        output_image = self.enhance_image(
-            input_image,
-            modules=modules,
-            prompt=prompt,
-            denoising_strength=denoising_strength,
-            cfg_scale=cfg_scale,
-            steps=steps,
-            seed=seed
-        )
-        
-        # Encode back to base64
         buffer = io.BytesIO()
         output_image.save(buffer, format='PNG')
         buffer.seek(0)
