@@ -4,7 +4,7 @@ import { Cpu, Activity, Zap, HardDrive, Monitor, Thermometer } from 'lucide-reac
 interface SystemMetrics {
   cpu: { load: number };
   memory: { used: string; total: string };
-  gpu: { name: string; vramUsed: string; vramTotal: number; load: number; temp: number };
+  gpu: { name: string; vramUsed: string; vramTotal: number; load: number | null; temp: number | null };
 }
 
 declare global {
@@ -20,7 +20,7 @@ const TitleBar: React.FC = () => {
   const [stats, setStats] = useState<SystemMetrics>({
     cpu: { load: 0 },
     memory: { used: '0', total: '64' },
-    gpu: { name: 'Unknown GPU', vramUsed: '0', vramTotal: 12, load: 0, temp: 0 }
+    gpu: { name: 'Unknown GPU', vramUsed: '0', vramTotal: 12, load: null, temp: null }
   });
 
   useEffect(() => {
@@ -100,11 +100,13 @@ const TitleBar: React.FC = () => {
 
         <div className="h-3 w-px bg-white/10 hidden md:block"></div>
 
-        {/* GPU LOAD */}
-        <div className="flex items-center gap-1.5 w-[60px] md:w-auto whitespace-nowrap">
-          <Zap size={12} className={stats.gpu.load > 80 ? 'text-red-500' : 'text-yellow-500'} />
-          <span>GPU: <span className="text-white">{stats.gpu.load || 'N/A'}%</span></span>
-        </div>
+        {/* GPU LOAD - Only show if available */}
+        {stats.gpu.load !== null && (
+          <div className="flex items-center gap-1.5 w-[60px] md:w-auto whitespace-nowrap">
+            <Zap size={12} className={stats.gpu.load > 80 ? 'text-red-500' : 'text-yellow-500'} />
+            <span>GPU: <span className="text-white">{stats.gpu.load}%</span></span>
+          </div>
+        )}
 
         {/* VRAM */}
         <div className="flex items-center gap-1.5 w-auto whitespace-nowrap">

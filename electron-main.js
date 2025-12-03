@@ -122,10 +122,10 @@ ipcMain.handle('get-system-info', async () => {
             },
             gpu: {
                 name: gpuController.model || 'Unknown GPU',
-                vramUsed: gpuController.vram ? (gpuController.vram * 0.3).toFixed(1) : 0, // Estimate
-                vramTotal: gpuController.vram || 12, // MB -> GB conversion or default
-                load: gpuController.utilizationGpu || 0,
-                temp: gpuController.temperatureGpu || 0
+                vramUsed: gpuController.vram ? (gpuController.vram / 1024).toFixed(1) : '0', // Convert MB to GB
+                vramTotal: gpuController.vram ? (gpuController.vram / 1024).toFixed(0) : 12,
+                load: gpuController.utilizationGpu || gpuController.memoryUtilization || null, // Often null on Windows
+                temp: gpuController.temperatureGpu || null // Often null on Windows
             }
         };
     } catch (error) {
@@ -133,7 +133,7 @@ ipcMain.handle('get-system-info', async () => {
         return {
             cpu: { load: 0 },
             memory: { used: 0, total: 64 },
-            gpu: { name: 'Unknown', vramUsed: 0, vramTotal: 12, load: 0, temp: 0 }
+            gpu: { name: 'Unknown', vramUsed: '0', vramTotal: 12, load: null, temp: null }
         };
     }
 });
