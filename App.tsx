@@ -230,7 +230,7 @@ const App: React.FC = () => {
                 </div>
                 <button
                   onClick={handleAddMore}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded flex items-center gap-2 transition-colors"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 border border-emerald-500/50 text-white rounded flex items-center gap-2 transition-colors"
                 >
                   <span className="text-xl">+</span> Add Images
                 </button>
