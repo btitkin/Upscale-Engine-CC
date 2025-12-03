@@ -294,14 +294,13 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
         </div>
       </div>
 
-      {/* Metadata Panel */}
-      {!metadataCollapsed && (
-        <MetadataPanel
-          imageUrl={result.upscaledUrl}
-          filename={result.filename}
-          collapsed={metadataCollapsed}
-        />
-      )}
+      {/* Metadata Panel - Always show with collapse toggle */}
+      <MetadataPanel
+        imageUrl={result.upscaledUrl}
+        filename={result.filename}
+        collapsed={metadataCollapsed}
+        onToggle={() => setMetadataCollapsed(!metadataCollapsed)}
+      />
     </div>
   );
 };

@@ -17,9 +17,9 @@ export const checkServerStatus = async (url: string = BACKEND_URL): Promise<Serv
     try {
         const response = await fetch(`${url}/status`, { method: 'GET' });
         if (!response.ok) throw new Error("Backend offline");
-        
+
         const data = await response.json();
-        
+
         // Map backend response to existing ServerStatus interface
         return {
             online: data.status === 'online',
@@ -45,7 +45,7 @@ const fileToBase64 = (file: File): Promise<string> => {
     });
 };
 
-const getImageDimensions = (file: File): Promise<{width: number, height: number}> => {
+const getImageDimensions = (file: File): Promise<{ width: number, height: number }> => {
     return new Promise((r) => {
         const i = new Image();
         i.onload = () => r({ width: i.width, height: i.height });
@@ -54,31 +54,31 @@ const getImageDimensions = (file: File): Promise<{width: number, height: number}
 };
 
 export const processImageLocally = async (
-  file: File, 
-  settings: ProcessorSettings
+    file: File,
+    settings: ProcessorSettings
 ): Promise<UpscaleResult> => {
     const startTime = performance.now();
-    
+
     // 1. Prepare Data
     const base64 = await fileToBase64(file);
     const dims = await getImageDimensions(file);
-    
+
     // 2. Determine which endpoint to use based on active modules
     let endpoint = '';
     let payload: any = {
         image: base64
     };
-    
+
     // Route to appropriate backend endpoint based on modules
     if (settings.enableRealism) {
         // Phase 3: Qwen "Make it Real"
         endpoint = '/make-real';
         payload.prompt = settings.prompt || 'convert to photorealistic, raw photo, dslr quality';
-        
+
         if (settings.enableUpscale) {
             payload.scale_factor = settings.upscaleFactor;
         }
-        
+
     } else if (settings.enableSkin || settings.enableHiresFix) {
         // Phase 2: SDXL img2img enhancement
         endpoint = '/enhance';
@@ -91,49 +91,49 @@ export const processImageLocally = async (
         payload.denoising_strength = settings.denoisingStrength;
         payload.cfg_scale = settings.cfgScale;
         payload.prompt = settings.prompt || '';
-        
+
     } else if (settings.enableUpscale) {
-        // Phase 1: Simple ESRGAN upscale (CURRENTLY IMPLEMENTED)
+        // Phase 1: ESRGAN upscale only
         endpoint = '/upscale';
+        payload.model_name = settings.upscaler;
         payload.scale_factor = settings.upscaleFactor;
-        
+        payload.use_tiling = settings.enableTiling; // Control tiling based on user setting
     } else {
-        // No processing requested
-        throw new Error("No enhancement modules enabled");
+        throw new Error('No processing modules enabled');
     }
-    
+
     // 3. Make API request to backend
     const response = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
         headers: DEFAULT_HEADERS,
         body: JSON.stringify(payload)
     });
-    
+
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
-        
+
         // Check if feature not yet implemented
         if (response.status === 501) {
             throw new Error(`${errorData.error || 'Feature not yet implemented'}. Using simple upscale instead.`);
         }
-        
+
         throw new Error(errorData.error || `Backend error: ${response.statusText}`);
     }
-    
+
     const data = await response.json();
-    
+
     // 4. Extract result
     if (!data.image) {
         throw new Error("Backend returned no image data");
     }
-    
+
     const duration = (performance.now() - startTime) / 1000;
     const upscaledUrl = `data:image/png;base64,${data.image}`;
-    
+
     // Use backend-provided dimensions or calculate
     const width = data.width || (dims.width * settings.upscaleFactor);
     const height = data.height || (dims.height * settings.upscaleFactor);
-    
+
     return {
         filename: file.name,
         originalUrl: URL.createObjectURL(file),
