@@ -52,3 +52,16 @@ dist-electron/
 *.exe
 *.dmg
 *.AppImage
+
+# Debug and test files
+debug_*.py
+debug_*.txt
+check_*.py
+test_*.py
+qwen_debug_log.txt
+*.bak
+
+# Large model files (test models)
+tinyllama.gguf
+models/*.ckpt
+

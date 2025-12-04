@@ -112,28 +112,50 @@ ipcMain.handle('get-system-info', async () => {
             si.battery()
         ]);
 
+        // Fetch real VRAM usage from backend if available
+        let vramUsed = '0';
+        let vramTotal = 12;
+
+        try {
+            const backendStats = await axios.get(`${BACKEND_URL}/system/stats`, { timeout: 500 });
+            if (backendStats.data && backendStats.data.vram_usage) {
+                vramUsed = backendStats.data.vram_usage.allocated_gb;
+                // Use reserved as total or keep static 12? 
+                // Better to show allocated/reserved or allocated/total_capacity
+                // Let's use reserved as the "active" total, or just keep 12 as the card limit.
+                // Actually, let's use the backend's reported reserved as "used" for a more conservative view,
+                // or allocated. User complained about 12/12.
+                // Let's use allocated for "Used" and 12 (or detected) for "Total".
+            }
+        } catch (e) {
+            // Backend offline, ignore
+        }
+
         const gpuController = graphics.controllers[0] || {};
+        // If backend provided data, use it. Otherwise fallback to SI (which is often wrong on Windows)
+        if (vramUsed === '0' && gpuController.vram) {
+            vramUsed = (gpuController.vram / 1024).toFixed(1);
+            vramTotal = (gpuController.vram / 1024).toFixed(0);
+        }
 
         return {
             cpu: {
                 load: Math.round(currentLoad.currentLoad),
-                temp: cpuTemp.main || cpuTemp.cores?.[0] || null // CPU temp (may be null on Windows)
+                temp: cpuTemp.main || cpuTemp.cores?.[0] || null
             },
             memory: {
-                used: (mem.used / 1024 / 1024 / 1024).toFixed(1), // GB
-                total: (mem.total / 1024 / 1024 / 1024).toFixed(0) // GB
+                used: (mem.used / 1024 / 1024 / 1024).toFixed(1),
+                total: (mem.total / 1024 / 1024 / 1024).toFixed(0)
             },
             gpu: {
                 name: gpuController.model || 'Unknown GPU',
-                vramUsed: gpuController.vram ? (gpuController.vram / 1024).toFixed(1) : '0', // Convert MB to GB
-                vramTotal: gpuController.vram ? (gpuController.vram / 1024).toFixed(0) : 12,
-                load: gpuController.utilizationGpu || gpuController.memoryUtilization || null, // Often null on Windows
-                temp: gpuController.temperatureGpu || null // Often null on Windows
+                vramUsed: vramUsed.toString(),
+                vramTotal: vramTotal,
+                load: gpuController.utilizationGpu || null,
+                temp: gpuController.temperatureGpu || null
             },
             psu: {
-                watts: battery.isCharging && battery.acConnected ?
-                    Math.round((battery.currentCapacity / 100) * 65) : // Estimate based on battery
-                    null // PSU wattage not available on most systems
+                watts: null
             }
         };
     } catch (error) {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ProcessorSettings, ServerStatus } from '../types';
-import { Sliders, Zap, Activity, Server, RefreshCw, AlertCircle, ToggleLeft, ToggleRight, Check } from 'lucide-react';
-import { checkServerStatus, setServerModel } from '../services/upscaleService';
+import { Sliders, Zap, Activity, Server, RefreshCw, AlertCircle, ToggleLeft, ToggleRight, Check, Download } from 'lucide-react';
+import { checkServerStatus, setServerModel, downloadModels } from '../services/upscaleService';
 
 interface SidebarProps {
   settings: ProcessorSettings;
@@ -14,6 +14,54 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onProcess, queueCount }) => {
   const [serverStatus, setServerStatus] = useState<ServerStatus>({ online: false, models: [], upscalers: [] });
   const [isChecking, setIsChecking] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    percent: number;
+    model: string;
+    speed_mbps: number;
+  } | null>(null);
+
+  // Poll download progress
+  useEffect(() => {
+    if (!isDownloading) return;
+
+    const pollProgress = async () => {
+      try {
+        const res = await fetch(`${settings.backendUrl}/models/download/progress`);
+        const data = await res.json();
+        if (data.active) {
+          setDownloadProgress({
+            percent: data.percent,
+            model: data.model,
+            speed_mbps: data.speed_mbps
+          });
+        } else {
+          setDownloadProgress(null);
+          setIsDownloading(false);
+          await checkConnection(); // Refresh status
+        }
+      } catch (e) {
+        console.error("Progress poll failed:", e);
+      }
+    };
+
+    const interval = setInterval(pollProgress, 500);
+    return () => clearInterval(interval);
+  }, [isDownloading, settings.backendUrl]);
+
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    setDownloadProgress({ percent: 0, model: "Starting...", speed_mbps: 0 });
+    try {
+      // Fire and forget - we poll for progress
+      fetch(`${settings.backendUrl}/models/download`, { method: 'POST' });
+    } catch (e) {
+      console.error(e);
+      alert("Download failed. Check backend console.");
+      setIsDownloading(false);
+      setDownloadProgress(null);
+    }
+  };
 
   const checkConnection = async () => {
     setIsChecking(true);
@@ -74,9 +122,41 @@ const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onPr
         </div>
 
         {/* Backend Status Indicator */}
-        <div className={`flex items-center gap-2 px-2 py-1 rounded text-[10px] font-bold ${serverStatus.online ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}`}>
-          <Server size={12} />
-          {serverStatus.online ? 'LOCAL BACKEND' : 'BACKEND OFFLINE'}
+        {/* Backend Status Indicator */}
+        <div className="flex flex-col gap-2">
+          <div className={`flex items-center gap-2 px-2 py-1 rounded text-[10px] font-bold ${serverStatus.online ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}`}>
+            <Server size={12} />
+            {serverStatus.online ? 'LOCAL BACKEND' : 'BACKEND OFFLINE'}
+          </div>
+
+          {serverStatus.online && serverStatus.missingModels && serverStatus.missingModels.length > 0 && (
+            isDownloading && downloadProgress ? (
+              <div className="w-full p-2 bg-blue-900/30 border border-blue-500/30 rounded">
+                <div className="flex justify-between text-[10px] text-blue-300 mb-1">
+                  <span className="truncate max-w-[60%]">{downloadProgress.model}</span>
+                  <span className="font-mono">{downloadProgress.speed_mbps} MB/s</span>
+                </div>
+                <div className="w-full h-2 bg-black/50 rounded overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 transition-all duration-300"
+                    style={{ width: `${downloadProgress.percent}%` }}
+                  />
+                </div>
+                <div className="text-center text-[11px] font-bold text-blue-400 mt-1">
+                  {downloadProgress.percent}%
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={handleDownload}
+                disabled={isDownloading}
+                className="w-full flex items-center justify-center gap-2 px-2 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-[10px] font-bold transition-colors shadow-lg shadow-blue-900/20"
+              >
+                <Download size={12} />
+                DOWNLOAD MISSING MODELS
+              </button>
+            )
+          )}
         </div>
       </div>
 
@@ -164,7 +244,7 @@ const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onPr
                     {serverStatus.upscalers.length > 0 ? (
                       serverStatus.upscalers.map(u => <option key={u} value={u}>{u}</option>)
                     ) : (
-                      <option value="4x-UltraSharp">4x-UltraSharp</option>
+                      <option value="RealESRGAN x4plus">RealESRGAN x4plus</option>
                     )}
                   </select>
                 </div>

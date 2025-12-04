@@ -5,7 +5,7 @@ import ImageUploader from './components/ImageUploader';
 import ComparisonView from './components/ComparisonView';
 import BatchQueue from './components/BatchQueue';
 import MetadataPanel from './components/MetadataPanel';
-import { processImageLocally } from './services/upscaleService';
+import { processImageLocally, pollProgress, ProgressUpdate } from './services/upscaleService';
 import { AppState, UpscaleResult, ProcessorSettings } from './types';
 import { Layers } from 'lucide-react';
 
@@ -29,13 +29,17 @@ const App: React.FC = () => {
   const [metadataCollapsed, setMetadataCollapsed] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
+  // Progress tracking
+  const [processingStep, setProcessingStep] = useState<string>('');
+  const [processingProgress, setProcessingProgress] = useState<number>(0);
+
   // Progress State
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
   // Settings Default to Localhost Backend
   const [settings, setSettings] = useState<ProcessorSettings>({
     backendUrl: 'http://127.0.0.1:5555',
-    upscaler: '4x-UltraSharp',
+    upscaler: 'RealESRGAN x4plus',
     checkpoint: '',
 
     // Toggles Defaults
@@ -51,6 +55,35 @@ const App: React.FC = () => {
     cfgScale: 7.0,
     prompt: ''
   });
+
+  // System Stats
+  const [systemStats, setSystemStats] = useState<any>(null);
+
+  // Load settings
+  React.useEffect(() => {
+    const saved = localStorage.getItem('lumascale_settings');
+    if (saved) {
+      try {
+        setSettings(prev => ({ ...prev, ...JSON.parse(saved) }));
+      } catch (e) { console.error(e); }
+    }
+  }, []);
+
+  // Save settings
+  React.useEffect(() => {
+    localStorage.setItem('lumascale_settings', JSON.stringify(settings));
+  }, [settings]);
+
+  // Poll Stats
+  React.useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${settings.backendUrl}/system/stats`);
+        if (res.ok) setSystemStats(await res.json());
+      } catch (e) { }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [settings.backendUrl]);
 
   const handleUpload = (files: File[]) => {
     setQueue(files);
@@ -95,7 +128,16 @@ const App: React.FC = () => {
         setProgress({ current: i + 1, total: queue.length });
 
         try {
-          const data = await processImageLocally(queue[i], settings);
+          // Reset progress for new image
+          setProcessingStep('');
+          setProcessingProgress(0);
+
+          // Process with progress callback
+          const data = await processImageLocally(queue[i], settings, (update) => {
+            setProcessingStep(update.step);
+            setProcessingProgress(update.progress);
+          });
+
           newResults.push(data);
         } catch (error: any) {
           console.error(`Processing failed for ${queue[i].name}`, error);
@@ -234,11 +276,34 @@ const App: React.FC = () => {
                 <div className="absolute inset-0 rounded-full border-4 border-white/10"></div>
                 <div className="absolute inset-0 rounded-full border-4 border-t-emerald-500 animate-spin"></div>
               </div>
-              <div className="text-center">
+              <div className="text-center w-full max-w-md">
                 <p className="text-xl font-bold mb-2">Processing Images...</p>
                 <p className="text-white/60 mb-4">
                   {progress.current} of {progress.total}
                 </p>
+
+                {/* Progress Step Message */}
+                {processingStep && (
+                  <p className="text-sm text-white/80 mb-3 font-mono">
+                    {processingStep}
+                  </p>
+                )}
+
+                {/* Progress Bar */}
+                {processingProgress > 0 && (
+                  <div className="w-full bg-white/10 rounded-full h-2 mb-4 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-full transition-all duration-300 ease-out"
+                      style={{ width: `${processingProgress}%` }}
+                    />
+                  </div>
+                )}
+
+                {/* Progress Percentage */}
+                {processingProgress > 0 && (
+                  <p className="text-xs text-white/50 mb-4">{processingProgress}%</p>
+                )}
+
                 <button
                   onClick={cancelProcessing}
                   className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold flex items-center gap-2 mx-auto transition-colors"
@@ -267,7 +332,7 @@ const App: React.FC = () => {
               </div>
             </div>
           ) : (
-            <ImageUploader onUpload={handleUpload} isLoading={state === AppState.PROCESSING} />
+            <ImageUploader onUpload={handleUpload} isLoading={false} />
           )}
         </div>
 
@@ -298,6 +363,11 @@ const App: React.FC = () => {
             {state === AppState.PROCESSING ? `PROCESSING: ${progress.current} / ${progress.total}` : 'SYSTEM IDLE'}
           </span>
           <span className="uppercase">BACKEND: {settings.backendUrl}</span>
+          {systemStats?.vram_usage && (
+            <span className="text-emerald-400 font-mono">
+              VRAM: {systemStats.vram_usage.allocated_gb}GB
+            </span>
+          )}
         </div>
         <div className="relative z-10 flex gap-4">
           <span>Upscale Engine CC v1.0</span>

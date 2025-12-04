@@ -11,6 +11,19 @@ import numpy as np
 from PIL import Image
 from pathlib import Path
 from typing import Optional, Tuple, Callable
+
+# PATCH: Fix for newer torchvision versions breaking basicsr
+try:
+    from torchvision.transforms import functional_tensor
+except ImportError:
+    import torchvision.transforms.functional as F
+    import sys
+    import types
+    # Create a mock module
+    ft = types.ModuleType('torchvision.transforms.functional_tensor')
+    ft.rgb_to_grayscale = F.rgb_to_grayscale
+    sys.modules['torchvision.transforms.functional_tensor'] = ft
+
 from basicsr.archs.rrdbnet_arch import RRDBNet
 from realesrgan import RealESRGANer
 
@@ -98,20 +111,19 @@ class ESRGANEngine:
         input_image: Image.Image, 
         scale_factor: int = 4,
         outscale: Optional[float] = None,
+        use_tiling: bool = True,
         progress_callback: Optional[Callable[[int], None]] = None
     ) -> Image.Image:
         """
         Upscale a PIL Image with optional progress tracking
-        
-        Args:
-            input_image: PIL Image object
-            scale_factor: Target scale (2 or 4, model supports 4x natively)
-            outscale: Final output scale (e.g., 2.0 for 2x despite 4x model)
-            progress_callback: Optional function(progress_percent) for real-time updates
-        
-        Returns:
-            Upscaled PIL Image
         """
+        # Configure tiling
+        if use_tiling:
+            # Restore default tile size
+            self.upsampler.tile_size = 512 if self.device == 'cuda' else 256
+        else:
+            # Disable tiling (set to 0 or very large)
+            self.upsampler.tile_size = 0
         # Convert PIL to numpy array
         img_array = np.array(input_image)
         
@@ -154,18 +166,11 @@ class ESRGANEngine:
         self, 
         base64_image: str, 
         scale_factor: int = 4,
+        use_tiling: bool = True,
         progress_callback: Optional[Callable[[int], None]] = None
     ) -> str:
         """
         Upscale from base64 string, return base64 string
-        
-        Args:
-            base64_image: Base64 encoded image
-            scale_factor: 2 or 4
-            progress_callback: Optional progress callback
-        
-        Returns:
-            Base64 encoded upscaled image
         """
         # Decode base64 to PIL Image
         if progress_callback:
@@ -175,7 +180,12 @@ class ESRGANEngine:
         input_image = Image.open(io.BytesIO(image_data))
         
         # Upscale
-        output_image = self.upscale_image(input_image, scale_factor, progress_callback=progress_callback)
+        output_image = self.upscale_image(
+            input_image, 
+            scale_factor, 
+            use_tiling=use_tiling,
+            progress_callback=progress_callback
+        )
         
         # Encode back to base64
         if progress_callback:

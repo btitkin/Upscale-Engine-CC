@@ -1,97 +1,110 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Upscale Engine CC - Local AI Upscaler</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script>
-      tailwind.config = {
-        darkMode: 'class',
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Inter', 'sans-serif'],
-              mono: ['JetBrains Mono', 'monospace'],
-            },
-            colors: {
-              app: {
-                bg: '#09090b',
-                panel: '#121214',
-                border: '#27272a',
-                hover: '#27272a',
-                accent: '#ffffff',
-                text: '#e4e4e7',
-                muted: '#71717a'
-              }
-            },
-            backgroundImage: {
-              'grid-pattern': "linear-gradient(to right, #222 1px, transparent 1px), linear-gradient(to bottom, #222 1px, transparent 1px)",
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Upscale Engine CC - Local AI Upscaler</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            app: {
+              bg: '#09090b',
+              panel: '#121214',
+              border: '#27272a',
+              hover: '#27272a',
+              accent: '#ffffff',
+              text: '#e4e4e7',
+              muted: '#71717a'
             }
+          },
+          backgroundImage: {
+            'grid-pattern': "linear-gradient(to right, #222 1px, transparent 1px), linear-gradient(to bottom, #222 1px, transparent 1px)",
           }
         }
       }
-    </script>
-    <style>
-      html, body {
-        height: 100%;
-        overflow: hidden; /* Prevent scrolling like a website */
-        background-color: #09090b;
-        color: #e4e4e7;
-        user-select: none; /* Desktop app feel */
-      }
-      #root {
-        height: 100%;
-      }
-      
-      /* Technical Grid Backgrounds */
-      .tech-grid-major {
-        background-size: 50px 50px;
-        background-image: 
-          linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-      }
-      .tech-grid-minor {
-        background-size: 10px 10px;
-        background-image: 
-          linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-      }
-      
-      /* Custom Range Slider */
-      input[type=range] {
-        -webkit-appearance: none; 
-        background: transparent; 
-      }
-      input[type=range]::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        height: 12px;
-        width: 12px;
-        border-radius: 50%;
-        background: #ffffff;
-        cursor: pointer;
-        margin-top: -5px; 
-      }
-      input[type=range]::-webkit-slider-runnable-track {
-        width: 100%;
-        height: 2px;
-        background: #333;
-        border-radius: 2px;
-      }
-      
-      /* Scrollbar for panels */
-      .custom-scroll::-webkit-scrollbar {
-        width: 6px;
-      }
-      .custom-scroll::-webkit-scrollbar-track {
-        background: transparent;
-      }
-      .custom-scroll::-webkit-scrollbar-thumb {
-        background: #333;
-        border-radius: 3px;
-      }
-    </style>
+    }
+  </script>
+  <style>
+    html,
+    body {
+      height: 100%;
+      overflow: hidden;
+      /* Prevent scrolling like a website */
+      background-color: #09090b;
+      color: #e4e4e7;
+      user-select: none;
+      /* Desktop app feel */
+    }
+
+    #root {
+      height: 100%;
+    }
+
+    /* Technical Grid Backgrounds */
+    .tech-grid-major {
+      background-size: 50px 50px;
+      background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    }
+
+    .tech-grid-minor {
+      background-size: 10px 10px;
+      background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    }
+
+    /* Custom Range Slider */
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: transparent;
+    }
+
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      margin-top: -5px;
+    }
+
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 2px;
+      background: #333;
+      border-radius: 2px;
+    }
+
+    /* Scrollbar for panels */
+    .custom-scroll::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .custom-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #333;
+      border-radius: 3px;
+    }
+  </style>
   <script type="importmap">
 {
   "imports": {
@@ -106,10 +119,12 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/index.css">
 </head>
-  <body class="antialiased selection:bg-white selection:text-black">
-    <div id="root"></div>
+
+<body class="antialiased selection:bg-white selection:text-black">
+  <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
+
 </html>

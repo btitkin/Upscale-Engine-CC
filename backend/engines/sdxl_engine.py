@@ -11,7 +11,7 @@ import torch
 import numpy as np
 from PIL import Image
 from pathlib import Path
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Callable
 from diffusers import (
     StableDiffusionXLImg2ImgPipeline,
     DPMSolverMultistepScheduler,
@@ -140,27 +140,17 @@ class SDXLEngine:
         input_image: Image.Image,
         modules: Dict[str, bool],
         prompt: str = "",
-        denoising_strength: float = 0.25,  # Lowered from 0.4 for better preservation
+        denoising_strength: float = 0.25,
         cfg_scale: float = 7.0,
         steps: int = 25,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        use_tiling: bool = True,
+        progress_callback: Optional[Callable[[int], None]] = None
     ) -> Image.Image:
         """
         Enhance image using SDXL img2img
-        
-        Args:
-            input_image: PIL Image
-            modules: Dict with keys 'skin_texture', 'hires_fix', 'upscale'
-            prompt: Optional user prompt
-            denoising_strength: How much to change (0.0-1.0)
-            cfg_scale: Prompt adherence (1.0-20.0)
-            steps: Number of inference steps
-            seed: Random seed for reproducibility
-            
-        Returns:
-            Enhanced PIL Image
         """
-        # Build prompts based on active modules
+        # Build prompts
         positive_prompt, negative_prompt = self._build_prompt(
             prompt,
             enable_skin=modules.get('skin_texture', False),
@@ -168,60 +158,97 @@ class SDXLEngine:
         )
         
         print(f"Positive: {positive_prompt[:100]}...")
-        print(f"Negative: {negative_prompt[:100]}...")
         
-        # Set seed if provided
+        # Set seed
         generator = None
         if seed is not None:
             generator = torch.Generator(device=self.device).manual_seed(seed)
         
-        # Prepare image dimensions (SDXL works best with multiples of 64)
+        # Resize for SDXL
         width, height = input_image.size
         width = (width // 64) * 64
         height = (height // 64) * 64
-        
         if (width, height) != input_image.size:
-            print(f"Resizing from {input_image.size} to ({width}, {height}) for SDXL compatibility")
             input_image = input_image.resize((width, height), Image.LANCZOS)
+
+        # Helper for inference with retry
+        def run_inference(tiling_enabled):
+            # Toggle VAE Tiling
+            if self.device == 'cuda':
+                if tiling_enabled:
+                    self.pipeline.enable_vae_tiling()
+                    # Disable slicing when tiling is on to prevent conflicts
+                    self.pipeline.disable_attention_slicing()
+                else:
+                    self.pipeline.disable_vae_tiling()
+                    self.pipeline.enable_attention_slicing()
+
+            # HiresFix: Two-pass generation
+            if modules.get('hires_fix', False):
+                print("HiresFix enabled: Running two-pass generation...")
+                
+                # Pass 1 (0-50%)
+                def cb_pass1(pipe, step, t, kwargs):
+                    if progress_callback:
+                        progress_callback(int((step / steps) * 50))
+                    return kwargs
+
+                result = self.pipeline(
+                    image=input_image,
+                    prompt=positive_prompt,
+                    negative_prompt=negative_prompt,
+                    strength=denoising_strength * 0.7,
+                    guidance_scale=cfg_scale,
+                    num_inference_steps=steps,
+                    generator=generator,
+                    callback_on_step_end=cb_pass1
+                ).images[0]
+                
+                # Pass 2 (50-100%)
+                def cb_pass2(pipe, step, t, kwargs):
+                    if progress_callback:
+                        progress_callback(50 + int((step / (steps // 2)) * 50))
+                    return kwargs
+
+                result = self.pipeline(
+                    image=result,
+                    prompt=positive_prompt,
+                    negative_prompt=negative_prompt,
+                    strength=denoising_strength * 0.3,
+                    guidance_scale=cfg_scale,
+                    num_inference_steps=steps // 2,
+                    generator=generator,
+                    callback_on_step_end=cb_pass2
+                ).images[0]
+                
+            else:
+                # Single pass
+                result = self.pipeline(
+                    image=input_image,
+                    prompt=positive_prompt,
+                    negative_prompt=negative_prompt,
+                    strength=denoising_strength,
+                    guidance_scale=cfg_scale,
+                    num_inference_steps=steps,
+                    generator=generator,
+                    callback_on_step_end=callback_wrapper
+                ).images[0]
+            
+            return result
+
+        try:
+            # Try with requested tiling setting
+            result = run_inference(use_tiling)
+        except RuntimeError as e:
+            if "cannot reshape tensor" in str(e) and use_tiling:
+                print(f"[WARN] VAE Tiling failed: {e}")
+                print("[INFO] Retrying without VAE tiling...")
+                if progress_callback: progress_callback(0) # Reset progress
+                result = run_inference(False)
+            else:
+                raise e
         
-        # HiresFix: Two-pass generation for better quality
-        if modules.get('hires_fix', False):
-            print("HiresFix enabled: Running two-pass generation...")
-            
-            # First pass: Lower denoising
-            result = self.pipeline(
-                image=input_image,
-                prompt=positive_prompt,
-                negative_prompt=negative_prompt,
-                strength=denoising_strength * 0.7,  # 70% of requested strength
-                guidance_scale=cfg_scale,
-                num_inference_steps=steps,
-                generator=generator
-            ).images[0]
-            
-            # Second pass: Refinement
-            result = self.pipeline(
-                image=result,
-                prompt=positive_prompt,
-                negative_prompt=negative_prompt,
-                strength=denoising_strength * 0.3,  # 30% refinement
-                guidance_scale=cfg_scale,
-                num_inference_steps=steps // 2,  # Fewer steps for refinement
-                generator=generator
-            ).images[0]
-            
-        else:
-            # Single pass generation
-            result = self.pipeline(
-                image=input_image,
-                prompt=positive_prompt,
-                negative_prompt=negative_prompt,
-                strength=denoising_strength,
-                guidance_scale=cfg_scale,
-                num_inference_steps=steps,
-                generator=generator
-            ).images[0]
-        
+        if progress_callback: progress_callback(100)
         return result
     
     def enhance_from_base64(
@@ -256,6 +283,17 @@ class SDXLEngine:
             input_image = rgb_image
         elif input_image.mode != 'RGB':
             input_image = input_image.convert('RGB')
+        
+        # Process
+        output_image = self.enhance_image(
+            input_image,
+            modules=modules,
+            prompt=prompt,
+            denoising_strength=denoising_strength,
+            cfg_scale=cfg_scale,
+            steps=steps,
+            seed=seed
+        )
         
         buffer = io.BytesIO()
         output_image.save(buffer, format='PNG')

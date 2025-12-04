@@ -6,6 +6,13 @@
     "size": 67040989,
     "type": "esrgan"
   },
+  "swinir": {
+    "name": "SwinIR-L 4x",
+    "filename": "RealSR_BSRGAN_SwinIR_L.pth",
+    "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth",
+    "size": 284951549,
+    "type": "swinir"
+  },
   "sdxl": {
     "name": "Juggernaut XL 9.0",
     "filename": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
@@ -14,10 +21,17 @@
     "type": "sdxl"
   },
   "qwen": {
-    "name": "Qwen Image Edit 2509",
-    "filename": "Qwen-Image-Edit-2509-Q4_K_M.gguf",
-    "url": "https://huggingface.co/QuantStack/Qwen-Image-Edit-2509-GGUF/resolve/main/Qwen-Image-Edit-2509-Q4_K_M.gguf",
-    "size": 13100000000,
+    "name": "Qwen Image Edit Plus 2509 (Q3_K_M)",
+    "filename": "Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf",
+    "url": "https://huggingface.co/MonsterMMORPG/Wan_GGUF/resolve/main/Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf",
+    "size": 9679567392,
     "type": "gguf"
+  },
+  "supresdiffgan": {
+    "name": "SupResDiffGAN 4x",
+    "filename": "SupResDiffGAN-imagenet.ckpt",
+    "url": "https://github.com/Dawir7/SupResDiffGAN/releases/download/v1.0/SupResDiffGAN-imagenet.ckpt",
+    "size": 1014183293,
+    "type": "supresdiffgan"
   }
 }

@@ -38,4 +38,5 @@ export interface ServerStatus {
   online: boolean;
   models: string[];
   upscalers: string[];
+  missingModels?: string[];
 }

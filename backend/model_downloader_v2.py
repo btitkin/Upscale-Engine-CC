@@ -38,9 +38,9 @@ class ModelDownloader:
             },
             "swinir": {
                 "name": "SwinIR-L 4x",
-                "filename": "RealSR_BSRGAN_SwinIR_L.pth",
+                "filename": "SwinIR_RealWorld_Large_x4.pth",
                 "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth",
-                "size": 284951549,
+                "size": 138000000,
                 "type": "swinir"
             },
             "sdxl": {
@@ -51,18 +51,11 @@ class ModelDownloader:
                 "type": "sdxl"
             },
             "qwen": {
-                "name": "Qwen Image Edit Plus 2509 (Q3_K_M)",
-                "filename": "Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf",
-                "url": "https://huggingface.co/MonsterMMORPG/Wan_GGUF/resolve/main/Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf",
-                "size": 9679567392, # Exact bytes
+                "name": "Qwen Image Edit 2509",
+                "filename": "Qwen-Image-Edit-2509-Q4_K_M.gguf",
+                "url": "https://huggingface.co/QuantStack/Qwen-Image-Edit-2509-GGUF/resolve/main/Qwen-Image-Edit-2509-Q4_K_M.gguf",
+                "size": 13100000000,
                 "type": "gguf"
-            },
-            "supresdiffgan": {
-                "name": "SupResDiffGAN 4x",
-                "filename": "SupResDiffGAN-imagenet.ckpt",
-                "url": "https://github.com/Dawir7/SupResDiffGAN/releases/download/v1.0/SupResDiffGAN-imagenet.ckpt",
-                "size": 1014183293,
-                "type": "supresdiffgan"
             }
         }
         
@@ -74,33 +67,6 @@ class ModelDownloader:
         with open(self.manifest_path, 'r') as f:
             return json.load(f)
     
-    def verify_gguf_integrity(self, file_path: Path) -> bool:
-        """
-        Check if GGUF file has valid header and reasonable metadata count.
-        Returns True if valid, False if corrupted.
-        """
-        try:
-            import struct
-            with open(file_path, "rb") as f:
-                magic = f.read(4)
-                if magic != b'GGUF':
-                    return False
-                
-                version = struct.unpack("I", f.read(4))[0]
-                tensor_count = struct.unpack("Q", f.read(8))[0]
-                metadata_kv_count = struct.unpack("Q", f.read(8))[0]
-                
-                # A valid GGUF should have more than 3 keys (usually 20+)
-                # Relaxed check: Some GGUFs have very few keys.
-                if metadata_kv_count < 2:
-                    print(f"Warning: GGUF file {file_path.name} seems corrupted (only {metadata_kv_count} metadata keys)")
-                    return False
-                    
-                return True
-        except Exception as e:
-            print(f"Error verifying GGUF integrity: {e}")
-            return False
-
     def check_model_exists(self, model_key: str) -> bool:
         """Check if model is already downloaded and valid"""
         if model_key not in self.manifest:
@@ -118,20 +84,7 @@ class ModelDownloader:
         
         # Allow 1% variance for size check
         size_diff = abs(actual_size - expected_size) / expected_size
-        if size_diff >= 0.01:
-            return False
-            
-        # Extra check for GGUF files
-        if model_info.get("type") == "gguf":
-            if not self.verify_gguf_integrity(model_path):
-                print(f"Detected corrupted GGUF file: {model_path.name}. Deleting...")
-                try:
-                    model_path.unlink() # Delete corrupted file
-                except Exception as e:
-                    print(f"Failed to delete corrupted file: {e}")
-                return False
-                
-        return True
+        return size_diff < 0.01
     
     def get_missing_models(self) -> list:
         """Returns list of model keys that need to be downloaded"""
@@ -193,7 +146,7 @@ class ModelDownloader:
                 total_size = int(response.headers['content-range'].split('/')[-1])
             
             downloaded = resume_byte_pos
-            chunk_size = 1048576  # 1MB chunks for faster download
+            chunk_size = 8192  # 8KB chunks
             
             mode = 'ab' if resume_byte_pos > 0 else 'wb'
             

@@ -21,10 +21,16 @@ export const checkServerStatus = async (url: string = BACKEND_URL): Promise<Serv
         const data = await response.json();
 
         // Map backend response to existing ServerStatus interface
+        const upscalers = [];
+        if (data.models.esrgan) upscalers.push('RealESRGAN x4plus');
+        if (data.models.swinir) upscalers.push('SwinIR-L 4x');
+        if (data.models.supresdiffgan) upscalers.push('SupResDiffGAN 4x');
+
         return {
             online: data.status === 'online',
             models: data.models_ready ? ['LumaScale Models'] : [],
-            upscalers: data.models.esrgan ? ['4x-UltraSharp'] : []
+            upscalers: upscalers.length > 0 ? upscalers : ['RealESRGAN x4plus'],
+            missingModels: data.missing_models || []
         };
     } catch (e) {
         return { online: false, models: [], upscalers: [] };
@@ -35,6 +41,13 @@ export const checkServerStatus = async (url: string = BACKEND_URL): Promise<Serv
 export const setServerModel = async (url: string, modelTitle: string): Promise<void> => {
     // No-op: Backend automatically uses correct models
     return Promise.resolve();
+};
+
+export const downloadModels = async (url: string = BACKEND_URL): Promise<void> => {
+    const response = await fetch(`${url}/models/download`, { method: 'POST' });
+    if (!response.ok) throw new Error("Download failed");
+    const data = await response.json();
+    if (data.status === 'error') throw new Error(data.message);
 };
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -53,9 +66,46 @@ const getImageDimensions = (file: File): Promise<{ width: number, height: number
     });
 };
 
+export interface ProgressUpdate {
+    status: string;
+    step: string;
+    progress: number;
+}
+
+export const pollProgress = async (
+    requestId: string,
+    onProgress: (update: ProgressUpdate) => void
+): Promise<void> => {
+    return new Promise((resolve) => {
+        const interval = setInterval(async () => {
+            try {
+                const response = await fetch(`${BACKEND_URL}/progress/${requestId}`);
+                if (!response.ok) {
+                    clearInterval(interval);
+                    resolve();
+                    return;
+                }
+
+                const data: ProgressUpdate = await response.json();
+                onProgress(data);
+
+                if (data.status === 'complete' || data.progress >= 100) {
+                    clearInterval(interval);
+                    resolve();
+                }
+            } catch (e) {
+                console.error('Progress poll error:', e);
+                clearInterval(interval);
+                resolve();
+            }
+        }, 500); // Poll every 500ms
+    });
+};
+
 export const processImageLocally = async (
     file: File,
-    settings: ProcessorSettings
+    settings: ProcessorSettings,
+    onProgress?: (update: ProgressUpdate) => void
 ): Promise<UpscaleResult> => {
     const startTime = performance.now();
 
@@ -63,10 +113,15 @@ export const processImageLocally = async (
     const base64 = await fileToBase64(file);
     const dims = await getImageDimensions(file);
 
+    // Generate Request ID for progress tracking
+    const requestId = crypto.randomUUID();
+
     // 2. Determine which endpoint to use based on active modules
     let endpoint = '';
     let payload: any = {
-        image: base64
+        image: base64,
+        request_id: requestId,
+        use_tiling: settings.enableTiling // Universal tiling support
     };
 
     // Route to appropriate backend endpoint based on modules
@@ -95,14 +150,21 @@ export const processImageLocally = async (
     } else if (settings.enableUpscale) {
         // Phase 1: ESRGAN upscale only
         endpoint = '/upscale';
-        payload.model_name = settings.upscaler;
+        payload.upscaler = settings.upscaler;
         payload.scale_factor = settings.upscaleFactor;
-        payload.use_tiling = settings.enableTiling; // Control tiling based on user setting
     } else {
         throw new Error('No processing modules enabled');
     }
 
-    // 3. Make API request to backend
+    // Start polling concurrently if callback provided
+    if (onProgress) {
+        // Start polling immediately (non-blocking)
+        pollProgress(requestId, onProgress).catch(err => {
+            console.error('Progress polling error:', err);
+        });
+    }
+
+    // 3. Make API request to backend (Blocking)
     const response = await fetch(`${BACKEND_URL}${endpoint}`, {
         method: 'POST',
         headers: DEFAULT_HEADERS,

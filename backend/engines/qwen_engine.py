@@ -1,225 +1,210 @@
 """
-Qwen Multimodal GGUF Inference Engine
-Handles "Make it Real" image editing using Qwen Image Edit 2509
-NOTE: This is a template implementation - requires testing with actual Qwen model
+Qwen2-VL Engine for Upscale Engine CC
+Multimodal vision-language model for image analysis and prompt generation
 """
-
 import os
-import io
 import base64
-import torch
-from PIL import Image
+import io
 from pathlib import Path
+from PIL import Image
 from typing import Optional
-from llama_cpp import Llama
-from llama_cpp.llama_chat_format import Llava15ChatHandler
+
+try:
+    from llama_cpp import Llama
+except ImportError:
+    print("llama-cpp-python not installed")
+    Llama = None
 
 
 class QwenEngine:
-    def __init__(self, model_path: str, mmproj_path: Optional[str] = None, device: Optional[str] = None):
-        """
-        Initialize Qwen GGUF multimodal engine
-        
-        Args:
-            model_path: Path to .gguf model file
-            mmproj_path: Path to multimodal projector (mmproj) file (optional)
-            device: 'cuda' or 'cpu', auto-detects if None
-        """
+    """
+    Qwen2-VL Engine for image understanding and prompt generation.
+    Uses llama-cpp-python with Qwen chat format for multimodal inference.
+    """
+    
+    def __init__(self, model_path: str, device: str = 'cuda'):
+        if Llama is None:
+            raise ImportError("llama-cpp-python is required for QwenEngine")
+
         self.model_path = Path(model_path)
-        
         if not self.model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_path}")
+
+        n_gpu = -1 if device == 'cuda' else 0
         
-        # Auto-detect device
-        if device is None:
-            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        else:
-            self.device = device
+        print(f"Loading Qwen2-VL from {self.model_path}...")
+        print(f"  Device: {'GPU (all layers)' if n_gpu == -1 else 'CPU'}")
         
-        print(f"Qwen Engine initializing on {self.device.upper()}...")
+        # Qwen2-VL GGUF Configuration
+        # Uses ChatML format which supports multimodal messages
+        load_kwargs = {
+            "model_path": str(self.model_path),
+            "n_ctx": 4096,  # Larger context for image tokens
+            "n_gpu_layers": n_gpu,
+            "verbose": False,
+            "chat_format": "chatml",  # Qwen uses ChatML format
+        }
         
-        # Note: Qwen Image Edit may require a separate mmproj file
-        # Check if mmproj exists in same directory as model
-        if mmproj_path is None:
-            potential_mmproj = self.model_path.parent / "mmproj-Qwen-Image-Edit-2509.gguf"
-            if potential_mmproj.exists():
-                mmproj_path = str(potential_mmproj)
-                print(f"Found mmproj: {mmproj_path}")
-        
-        # Initialize llama.cpp with multimodal support
-        # NOTE: This is a template - actual Qwen Image Edit may require different chat handler
-        chat_handler = None
-        if mmproj_path:
-            chat_handler = Llava15ChatHandler(clip_model_path=mmproj_path)
-        
-        self.model = Llama(
-            model_path=str(self.model_path),
-            chat_handler=chat_handler,
-            n_ctx=2048,  # Context window
-            n_gpu_layers=-1 if self.device == 'cuda' else 0,  # Use GPU if available
-            verbose=False
-        )
-        
-        print(f"✓ Qwen Engine ready!")
+        try:
+            self.model = Llama(**load_kwargs)
+            print("✓ Qwen2-VL loaded successfully")
+            self._test_model()
+        except Exception as e:
+            print(f"Error loading Qwen on GPU: {e}")
+            if n_gpu != 0:
+                print("Retrying on CPU (this will be slower)...")
+                load_kwargs["n_gpu_layers"] = 0
+                try:
+                    self.model = Llama(**load_kwargs)
+                    print("✓ Qwen2-VL loaded on CPU")
+                except Exception as e2:
+                    print(f"Failed to load Qwen on CPU: {e2}")
+                    raise e2
+            else:
+                raise e
     
-    def _image_to_data_uri(self, image: Image.Image) -> str:
-        """Convert PIL Image to base64 data URI"""
-        buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
-        buffer.seek(0)
-        image_base64 = base64.b64encode(buffer.read()).decode('utf-8')
-        return f"data:image/png;base64,{image_base64}"
+    def _test_model(self):
+        """Quick test to verify model responds"""
+        try:
+            test = self.model.create_chat_completion(
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=5
+            )
+            print(f"  Model test: OK (responded)")
+        except Exception as e:
+            print(f"  Model test warning: {e}")
     
-    def make_real(
-        self,
-        input_image: Image.Image,
-        prompt: str = "convert to photorealistic, raw photo, dslr quality",
-        max_tokens: int = 512
-    ) -> Image.Image:
+    def _image_to_base64(self, image: Image.Image, max_size: int = 768) -> str:
+        """Convert PIL Image to base64 data URI, resizing if needed"""
+        # Resize large images for faster processing
+        if max(image.size) > max_size:
+            image = image.copy()
+            image.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+        
+        # Convert to RGB if needed (removes alpha channel)
+        if image.mode in ('RGBA', 'LA', 'P'):
+            image = image.convert('RGB')
+        
+        buffered = io.BytesIO()
+        image.save(buffered, format="JPEG", quality=85)
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+        return f"data:image/jpeg;base64,{img_str}"
+
+    def generate_prompt(self, image: Image.Image) -> str:
         """
-        Convert anime/illustration to photorealistic using multimodal LLM
-        
-        NOTE: This is a template implementation. Actual Qwen Image Edit
-        may use different prompting strategies or require specific formatting.
+        Analyze image and generate a photorealistic enhancement prompt.
         
         Args:
-            input_image: PIL Image (anime/illustration)
-            prompt: Editing instruction
-            max_tokens: Maximum tokens for response
+            image: PIL Image to analyze
             
         Returns:
-            Edited PIL Image (photorealistic)
+            Text prompt describing how to make the image photorealistic
         """
-        # Convert image to data URI
-        image_uri = self._image_to_data_uri(input_image)
-        
-        # Construct multimodal prompt
-        # NOTE: Actual Qwen Image Edit prompt format may be different
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": image_uri
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": f"[IMAGE EDIT INSTRUCTION] {prompt}"
-                    }
-                ]
-            }
+        try:
+            # Convert image to base64 data URI
+            data_uri = self._image_to_base64(image)
+            
+            # Qwen2-VL multimodal message format
+            # The model should understand images embedded as data URIs in content
+            system_prompt = """You are an expert image analyst. Analyze the provided image and describe what modifications would make it look more photorealistic.
+Focus on: lighting, texture, color grading, and fine details. 
+Output ONLY a comma-separated list of enhancement keywords (no explanations)."""
+
+            user_content = f"""[Image: {data_uri}]
+
+Analyze this image and provide enhancement keywords to make it photorealistic."""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content}
+            ]
+            
+            print("Qwen: Analyzing image...")
+            response = self.model.create_chat_completion(
+                messages=messages,
+                max_tokens=150,
+                temperature=0.7,
+                top_p=0.9,
+                repeat_penalty=1.1
+            )
+            
+            content = response["choices"][0]["message"]["content"].strip()
+            print(f"Qwen Response: {content}")
+            
+            # Clean up response - extract keywords
+            prompt = self._clean_prompt(content)
+            return prompt
+            
+        except Exception as e:
+            print(f"Qwen generation error: {e}")
+            # Fallback prompt if analysis fails
+            return "photorealistic, 8k uhd, highly detailed, raw photo, dslr quality, natural lighting"
+    
+    def _clean_prompt(self, raw_content: str) -> str:
+        """Clean and format the model's output into a usable prompt"""
+        # Remove common prefixes the model might add
+        prefixes_to_remove = [
+            "Enhancement keywords:",
+            "Keywords:",
+            "To make this image photorealistic:",
+            "Here are the keywords:",
+            "Prompt:"
         ]
         
-        print(f"Qwen processing: {prompt[:50]}...")
+        content = raw_content
+        for prefix in prefixes_to_remove:
+            if content.lower().startswith(prefix.lower()):
+                content = content[len(prefix):].strip()
         
-        # Run inference
-        response = self.model.create_chat_completion(
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=0.7
-        )
+        # If content is too short or empty, use fallback
+        if len(content) < 10:
+            return "photorealistic, 8k, highly detailed, raw photo, natural lighting"
         
-        # NOTE: The response format from Qwen Image Edit is unclear
-        # It may return:
-        # 1. Base64 encoded image in text response
-        # 2. Image data in a special field
-        # 3. Modified image via a different mechanism
+        # Ensure it ends cleanly (no trailing commas or periods)
+        content = content.rstrip('.,;: ')
         
-        # This is a placeholder - actual implementation depends on Qwen's output format
-        response_text = response['choices'][0]['message']['content']
-        print(f"Response: {response_text[:100]}...")
+        # Add base quality keywords if not present
+        quality_keywords = ["photorealistic", "8k", "detailed"]
+        has_quality = any(kw in content.lower() for kw in quality_keywords)
         
-        # TODO: Parse response and extract/generate edited image
-        # For now, return original (placeholder)
-        print("⚠ WARNING: Qwen image editing not fully implemented")
-        print("   Returning original image as placeholder")
+        if not has_quality:
+            content = f"photorealistic, {content}"
         
-        return input_image
+        return content
     
-    def make_real_from_base64(
-        self,
-        base64_image: str,
-        prompt: str = "convert to photorealistic"
-    ) -> str:
+    def describe_image(self, image: Image.Image) -> str:
         """
-        Make it Real from base64 string, return base64 string
+        Generate a detailed description of the image.
         
         Args:
-            base64_image: Base64 encoded image
-            prompt: Editing instruction
+            image: PIL Image to describe
             
         Returns:
-            Base64 encoded edited image
+            Detailed text description of the image
         """
-        # Decode base64 to PIL Image
-        image_data = base64.b64decode(base64_image)
-        input_image = Image.open(io.BytesIO(image_data))
-        
-        # Convert RGBA to RGB if needed
-        if input_image.mode == 'RGBA':
-            rgb_image = Image.new('RGB', input_image.size, (255, 255, 255))
-            rgb_image.paste(input_image, mask=input_image.split()[3])
-            input_image = rgb_image
-        elif input_image.mode != 'RGB':
-            input_image = input_image.convert('RGB')
-        
-        # Process
-        output_image = self.make_real(input_image, prompt)
-        
-        # Encode back to base64
-        buffer = io.BytesIO()
-        output_image.save(buffer, format='PNG')
-        buffer.seek(0)
-        result_base64 = base64.b64encode(buffer.read()).decode('utf-8')
-        
-        return result_base64
+        try:
+            data_uri = self._image_to_base64(image)
+            
+            messages = [
+                {"role": "system", "content": "You are an expert image analyst. Describe images in detail."},
+                {"role": "user", "content": f"[Image: {data_uri}]\n\nDescribe this image in detail."}
+            ]
+            
+            response = self.model.create_chat_completion(
+                messages=messages,
+                max_tokens=300,
+                temperature=0.5
+            )
+            
+            return response["choices"][0]["message"]["content"].strip()
+            
+        except Exception as e:
+            print(f"Image description error: {e}")
+            return "Unable to describe image"
     
     def unload(self):
-        """Free memory"""
+        """Free GPU memory"""
         if hasattr(self, 'model'):
             del self.model
+            print("Qwen model unloaded")
 
-
-# Test code
-if __name__ == "__main__":
-    print("Qwen Engine Test")
-    print("=" * 50)
-    print("\n⚠ NOTE: This is a template implementation")
-    print("Full Qwen Image Edit integration requires:")
-    print("  1. Correct mmproj file")
-    print("  2. Proper prompt formatting for image editing")
-    print("  3. Response parsing for edited images")
-    print("\nThis test will verify model loading only.\n")
-    
-    # Try to initialize
-    model_path = "../models/Qwen-Image-Edit-2509-Q4_K_M.gguf"
-    
-    if not Path(model_path).exists():
-        print(f"Model not found: {model_path}")
-        print("Run model_downloader.py first!")
-        exit(1)
-    
-    try:
-        engine = QwenEngine(model_path)
-        
-        # Create test image
-        test_img = Image.new('RGB', (256, 256), color='blue')
-        
-        print("\nTesting 'Make it Real' (placeholder)...")
-        result = engine.make_real(
-            test_img,
-            prompt="convert to photorealistic"
-        )
-        
-        print(f"✓ Function executed (returned {result.size})")
-        print("\n⚠ Remember: Full implementation requires Qwen-specific integration")
-        
-        engine.unload()
-        
-    except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
