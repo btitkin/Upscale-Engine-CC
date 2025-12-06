@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import ImageUploader from './components/ImageUploader';
 import ComparisonView from './components/ComparisonView';
 import BatchQueue from './components/BatchQueue';
 import MetadataPanel from './components/MetadataPanel';
+import LoadingScreen from './components/LoadingScreen';
 import { processImageLocally, pollProgress, ProgressUpdate } from './services/upscaleService';
+import { loadSettings, saveSettings } from './services/settingsService';
 import { AppState, UpscaleResult, ProcessorSettings } from './types';
 import { Layers } from 'lucide-react';
+import { useLivePreview } from './hooks/useLivePreview';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useProgressETA } from './hooks/useProgressETA';
 
 interface QueueImage {
   id: string;
@@ -29,49 +34,44 @@ const App: React.FC = () => {
   const [metadataCollapsed, setMetadataCollapsed] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
 
+  // App initialization state (loading screen)
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Settings - Load from localStorage on init (MUST be before useLivePreview)
+  const [settings, setSettings] = useState<ProcessorSettings>(loadSettings);
+
   // Progress tracking
   const [processingStep, setProcessingStep] = useState<string>('');
   const [processingProgress, setProcessingProgress] = useState<number>(0);
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
+
+  // File input ref for keyboard shortcut
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Live Preview Hook
+  const { previewImage, previewStep, reset: resetPreview } = useLivePreview(
+    settings.backendUrl,
+    currentRequestId,
+    state === AppState.PROCESSING
+  );
 
   // Progress State
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
-  // Settings Default to Localhost Backend
-  const [settings, setSettings] = useState<ProcessorSettings>({
-    backendUrl: 'http://127.0.0.1:5555',
-    upscaler: 'RealESRGAN x4plus',
-    checkpoint: '',
-
-    // Toggles Defaults
-    enableUpscale: true,
-    enableTiling: true,
-    enableRealism: false,
-    enableSkin: true,
-    enableHiresFix: true,
-
-    // Values
-    upscaleFactor: 2,
-    denoisingStrength: 0.25,  // Lower for better preservation
-    cfgScale: 7.0,
-    prompt: ''
-  });
+  // Progress ETA Hook
+  const { formatted: etaFormatted } = useProgressETA(
+    processingProgress,
+    state === AppState.PROCESSING,
+    progress.current,
+    progress.total
+  );
 
   // System Stats
   const [systemStats, setSystemStats] = useState<any>(null);
 
-  // Load settings
-  React.useEffect(() => {
-    const saved = localStorage.getItem('lumascale_settings');
-    if (saved) {
-      try {
-        setSettings(prev => ({ ...prev, ...JSON.parse(saved) }));
-      } catch (e) { console.error(e); }
-    }
-  }, []);
-
-  // Save settings
-  React.useEffect(() => {
-    localStorage.setItem('lumascale_settings', JSON.stringify(settings));
+  // Save settings whenever they change
+  useEffect(() => {
+    saveSettings(settings);
   }, [settings]);
 
   // Poll Stats
@@ -84,6 +84,11 @@ const App: React.FC = () => {
     }, 2000);
     return () => clearInterval(interval);
   }, [settings.backendUrl]);
+
+  // File dialog helper
+  const openFileDialog = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
 
   const handleUpload = (files: File[]) => {
     setQueue(files);
@@ -131,12 +136,22 @@ const App: React.FC = () => {
           // Reset progress for new image
           setProcessingStep('');
           setProcessingProgress(0);
+          setCurrentRequestId(null);  // Reset requestId
+          resetPreview();  // Reset preview
 
-          // Process with progress callback
-          const data = await processImageLocally(queue[i], settings, (update) => {
-            setProcessingStep(update.step);
-            setProcessingProgress(update.progress);
-          });
+          // Process with progress callback and requestId callback
+          const data = await processImageLocally(
+            queue[i],
+            settings,
+            (update) => {
+              setProcessingStep(update.step);
+              setProcessingProgress(update.progress);
+            },
+            (requestId) => {
+              // Set requestId for SSE preview connection
+              setCurrentRequestId(requestId);
+            }
+          );
 
           newResults.push(data);
         } catch (error: any) {
@@ -145,6 +160,8 @@ const App: React.FC = () => {
       }
     } finally {
       setAbortController(null);
+      setCurrentRequestId(null);
+      resetPreview();
     }
 
     if (newResults.length > 0) {
@@ -219,9 +236,6 @@ const App: React.FC = () => {
     setBatchMode(!batchMode);
   };
 
-  // File input ref for adding more images
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-
   const handleAddMore = () => {
     fileInputRef.current?.click();
   };
@@ -233,8 +247,35 @@ const App: React.FC = () => {
     }
   };
 
+  // Keyboard Shortcuts (after all handlers are defined)
+  useKeyboardShortcuts({
+    onProcess: () => {
+      if (queueImages.filter(q => q.selected).length > 0 && state !== AppState.PROCESSING) {
+        processBatch();
+      }
+    },
+    onCancel: cancelProcessing,
+    onOpenFiles: openFileDialog,
+    onNextResult: handleNext,
+    onPrevResult: handlePrev,
+    onClose: handleClose,
+    onSelectAll: handleSelectAll,
+    onDeselectAll: handleSelectNone,
+    isProcessing: state === AppState.PROCESSING,
+    hasQueue: queueImages.length > 0,
+    hasResults: results.length > 0
+  });
+
   return (
     <div className="h-screen w-screen flex flex-col bg-app-bg text-app-text overflow-hidden">
+      {/* Loading Screen - shown during initialization */}
+      {!isInitialized && (
+        <LoadingScreen
+          onReady={() => setIsInitialized(true)}
+          backendUrl={settings.backendUrl}
+        />
+      )}
+
       <TitleBar />
 
       {/* Hidden file input for adding more images */}
@@ -255,6 +296,10 @@ const App: React.FC = () => {
           disabled={state === AppState.PROCESSING}
           onProcess={processBatch}
           queueCount={queueImages.filter(img => img.selected).length}
+          // Progress Props
+          progress={processingProgress}
+          step={processingStep}
+          eta={etaFormatted}
         />
 
         {/* Main Content Area */}
@@ -262,6 +307,7 @@ const App: React.FC = () => {
           {state === AppState.RESULTS && results.length > 0 ? (
             <ComparisonView
               result={results[currentResultIndex]}
+              allResults={results}
               onClose={() => setState(AppState.IDLE)}
               onNext={() => setCurrentResultIndex((prev) => prev + 1)}
               onPrev={() => setCurrentResultIndex((prev) => prev - 1)}
@@ -270,48 +316,6 @@ const App: React.FC = () => {
               currentCount={currentResultIndex + 1}
               totalCount={results.length}
             />
-          ) : state === AppState.PROCESSING ? (
-            <div className="flex flex-col items-center gap-6">
-              <div className="relative w-32 h-32">
-                <div className="absolute inset-0 rounded-full border-4 border-white/10"></div>
-                <div className="absolute inset-0 rounded-full border-4 border-t-emerald-500 animate-spin"></div>
-              </div>
-              <div className="text-center w-full max-w-md">
-                <p className="text-xl font-bold mb-2">Processing Images...</p>
-                <p className="text-white/60 mb-4">
-                  {progress.current} of {progress.total}
-                </p>
-
-                {/* Progress Step Message */}
-                {processingStep && (
-                  <p className="text-sm text-white/80 mb-3 font-mono">
-                    {processingStep}
-                  </p>
-                )}
-
-                {/* Progress Bar */}
-                {processingProgress > 0 && (
-                  <div className="w-full bg-white/10 rounded-full h-2 mb-4 overflow-hidden">
-                    <div
-                      className="bg-emerald-500 h-full transition-all duration-300 ease-out"
-                      style={{ width: `${processingProgress}%` }}
-                    />
-                  </div>
-                )}
-
-                {/* Progress Percentage */}
-                {processingProgress > 0 && (
-                  <p className="text-xs text-white/50 mb-4">{processingProgress}%</p>
-                )}
-
-                <button
-                  onClick={cancelProcessing}
-                  className="px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold flex items-center gap-2 mx-auto transition-colors"
-                >
-                  <span className="text-xl">✕</span> STOP PROCESSING
-                </button>
-              </div>
-            </div>
           ) : queueImages.length > 0 ? (
             <div className="w-full h-full flex flex-col items-center justify-center gap-4 p-8">
               <img

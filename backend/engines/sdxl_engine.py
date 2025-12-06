@@ -145,10 +145,14 @@ class SDXLEngine:
         steps: int = 25,
         seed: Optional[int] = None,
         use_tiling: bool = True,
-        progress_callback: Optional[Callable[[int], None]] = None
+        progress_callback: Optional[Callable[[int], None]] = None,
+        preview_callback: Optional[Callable[[str, int], None]] = None  # (base64, step)
     ) -> Image.Image:
         """
         Enhance image using SDXL img2img
+        
+        Args:
+            preview_callback: Optional callback(base64_image, step_number) for live preview
         """
         # Build prompts
         positive_prompt, negative_prompt = self._build_prompt(
@@ -171,6 +175,44 @@ class SDXLEngine:
         if (width, height) != input_image.size:
             input_image = input_image.resize((width, height), Image.LANCZOS)
 
+        # Preview dimensions (x2 downscale for speed)
+        preview_width = max(256, width // 2)
+        preview_height = max(256, height // 2)
+
+        # Helper to decode latents and send preview
+        def send_preview_from_latents(latents, step_num):
+            if preview_callback is None:
+                return
+            try:
+                with torch.no_grad():
+                    # Decode latents to image
+                    decoded = self.pipeline.vae.decode(
+                        latents / self.pipeline.vae.config.scaling_factor
+                    ).sample
+                    
+                    # Convert to PIL Image
+                    decoded = (decoded / 2 + 0.5).clamp(0, 1)
+                    decoded = decoded.cpu().permute(0, 2, 3, 1).float().numpy()
+                    
+                    if decoded.shape[0] > 0:
+                        img_array = (decoded[0] * 255).astype(np.uint8)
+                        preview_img = Image.fromarray(img_array)
+                        
+                        # Resize for faster transfer (x2 downscale)
+                        preview_img = preview_img.resize(
+                            (preview_width, preview_height), 
+                            Image.LANCZOS
+                        )
+                        
+                        # Convert to base64
+                        buffer = io.BytesIO()
+                        preview_img.save(buffer, format='JPEG', quality=70)
+                        preview_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                        
+                        preview_callback(preview_b64, step_num)
+            except Exception as e:
+                print(f"Preview error: {e}")
+
         # Helper for inference with retry
         def run_inference(tiling_enabled):
             # Toggle VAE Tiling
@@ -191,6 +233,9 @@ class SDXLEngine:
                 def cb_pass1(pipe, step, t, kwargs):
                     if progress_callback:
                         progress_callback(int((step / steps) * 50))
+                    # Send preview every 4 steps
+                    if preview_callback and step > 0 and step % 4 == 0:
+                        send_preview_from_latents(kwargs.get("latents"), step)
                     return kwargs
 
                 result = self.pipeline(
@@ -201,13 +246,17 @@ class SDXLEngine:
                     guidance_scale=cfg_scale,
                     num_inference_steps=steps,
                     generator=generator,
-                    callback_on_step_end=cb_pass1
+                    callback_on_step_end=cb_pass1,
+                    callback_on_step_end_tensor_inputs=["latents"]
                 ).images[0]
                 
                 # Pass 2 (50-100%)
                 def cb_pass2(pipe, step, t, kwargs):
                     if progress_callback:
                         progress_callback(50 + int((step / (steps // 2)) * 50))
+                    # Send preview every 4 steps
+                    if preview_callback and step > 0 and step % 4 == 0:
+                        send_preview_from_latents(kwargs.get("latents"), steps + step)
                     return kwargs
 
                 result = self.pipeline(
@@ -218,11 +267,20 @@ class SDXLEngine:
                     guidance_scale=cfg_scale,
                     num_inference_steps=steps // 2,
                     generator=generator,
-                    callback_on_step_end=cb_pass2
+                    callback_on_step_end=cb_pass2,
+                    callback_on_step_end_tensor_inputs=["latents"]
                 ).images[0]
                 
             else:
-                # Single pass
+                # Single pass with preview
+                def callback_with_preview(pipe, step, t, kwargs):
+                    if progress_callback:
+                        progress_callback(int((step / steps) * 100))
+                    # Send preview every 4 steps
+                    if preview_callback and step > 0 and step % 4 == 0:
+                        send_preview_from_latents(kwargs.get("latents"), step)
+                    return kwargs
+
                 result = self.pipeline(
                     image=input_image,
                     prompt=positive_prompt,
@@ -231,7 +289,8 @@ class SDXLEngine:
                     guidance_scale=cfg_scale,
                     num_inference_steps=steps,
                     generator=generator,
-                    callback_on_step_end=callback_wrapper
+                    callback_on_step_end=callback_with_preview,
+                    callback_on_step_end_tensor_inputs=["latents"]
                 ).images[0]
             
             return result
@@ -259,7 +318,10 @@ class SDXLEngine:
         denoising_strength: float = 0.4,
         cfg_scale: float = 7.0,
         steps: int = 25,
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        use_tiling: bool = True,
+        progress_callback: Optional[Callable[[int], None]] = None,
+        preview_callback: Optional[Callable[[str, int], None]] = None
     ) -> str:
         """
         Enhance from base64 string, return base64 string
@@ -267,6 +329,7 @@ class SDXLEngine:
         Args:
             base64_image: Base64 encoded image
             modules: Enhancement modules to enable
+            preview_callback: Optional callback(base64_image, step) for live preview
             Other args: Same as enhance_image()
             
         Returns:
@@ -292,7 +355,10 @@ class SDXLEngine:
             denoising_strength=denoising_strength,
             cfg_scale=cfg_scale,
             steps=steps,
-            seed=seed
+            seed=seed,
+            use_tiling=use_tiling,
+            progress_callback=progress_callback,
+            preview_callback=preview_callback
         )
         
         buffer = io.BytesIO()

@@ -51,11 +51,44 @@ class ModelDownloader:
                 "type": "sdxl"
             },
             "qwen": {
-                "name": "Qwen Image Edit Plus 2509 (Q3_K_M)",
-                "filename": "Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf",
-                "url": "https://huggingface.co/MonsterMMORPG/Wan_GGUF/resolve/main/Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf",
-                "size": 9679567392, # Exact bytes
-                "type": "gguf"
+                "name": "Qwen Image Edit Q4_K_S (12GB)",
+                "filename": "Qwen_Image_Edit-Q4_K_S.gguf",
+                "url": "https://huggingface.co/city96/Qwen2-VL-Instruct-GGUF/resolve/main/qwen_image/Qwen_Image_Edit-Q4_K_S.gguf",
+                "size": 12600000000,
+                "type": "gguf",
+                "subdir": ""
+            },
+            "qwen_vae": {
+                "name": "Qwen Image VAE",
+                "filename": "qwen_image_vae.safetensors",
+                "url": "https://huggingface.co/city96/GGUF-Tools/resolve/main/qwen_image/qwen_image_vae.safetensors",
+                "size": 254000000,
+                "type": "vae",
+                "subdir": "vae"
+            },
+            "qwen_clip": {
+                "name": "Qwen 2.5 VL 7B FP8 CLIP",
+                "filename": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+                "url": "https://huggingface.co/city96/GGUF-Tools/resolve/main/qwen_image/qwen_2.5_vl_7b_fp8_scaled.safetensors",
+                "size": 9400000000,
+                "type": "clip",
+                "subdir": "clip"
+            },
+            "qwen_lightning_lora": {
+                "name": "Qwen Lightning 4-Steps LoRA",
+                "filename": "Qwen-Image-Lightning-4steps-V1.0.safetensors",
+                "url": "https://huggingface.co/city96/GGUF-Tools/resolve/main/qwen_image/Qwen-Image-Lightning-4steps-V1.0.safetensors",
+                "size": 1700000000,
+                "type": "lora",
+                "subdir": "loras"
+            },
+            "makeitreal_lora": {
+                "name": "Qwen Anime to Realism LoRA",
+                "filename": "qwen anime into realism_base.safetensors",
+                "url": "https://huggingface.co/caganseyrek/qwen-image-loaders/resolve/main/loras/qwen%20anime%20into%20realism_base.safetensors",
+                "size": 590000000,
+                "type": "lora",
+                "subdir": "loras"
             },
             "supresdiffgan": {
                 "name": "SupResDiffGAN 4x",
@@ -63,6 +96,13 @@ class ModelDownloader:
                 "url": "https://github.com/Dawir7/SupResDiffGAN/releases/download/v1.0/SupResDiffGAN-imagenet.ckpt",
                 "size": 1014183293,
                 "type": "supresdiffgan"
+            },
+            "gfpgan": {
+                "name": "GFPGAN v1.4 (Face Enhance)",
+                "filename": "GFPGANv1.4.pth",
+                "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth",
+                "size": 348632874,
+                "type": "gfpgan"
             }
         }
         
@@ -107,7 +147,15 @@ class ModelDownloader:
             return False
         
         model_info = self.manifest[model_key]
-        model_path = self.models_dir / model_info["filename"]
+        
+        # Handle subdirectory
+        subdir = model_info.get("subdir", "")
+        if subdir:
+            target_dir = self.models_dir / subdir
+        else:
+            target_dir = self.models_dir
+            
+        model_path = target_dir / model_info["filename"]
         
         if not model_path.exists():
             return False
@@ -116,9 +164,9 @@ class ModelDownloader:
         actual_size = model_path.stat().st_size
         expected_size = model_info["size"]
         
-        # Allow 1% variance for size check
+        # Allow 5% variance for size check (HuggingFace sizes can vary slightly)
         size_diff = abs(actual_size - expected_size) / expected_size
-        if size_diff >= 0.01:
+        if size_diff >= 0.05:
             return False
             
         # Extra check for GGUF files
@@ -161,7 +209,16 @@ class ModelDownloader:
             return False
         
         model_info = self.manifest[model_key]
-        model_path = self.models_dir / model_info["filename"]
+        
+        # Handle subdirectory
+        subdir = model_info.get("subdir", "")
+        if subdir:
+            target_dir = self.models_dir / subdir
+            target_dir.mkdir(exist_ok=True)
+        else:
+            target_dir = self.models_dir
+            
+        model_path = target_dir / model_info["filename"]
         url = model_info["url"]
         model_name = model_info["name"]
         
@@ -271,7 +328,15 @@ class ModelDownloader:
             return None
         
         model_info = self.manifest[model_key]
-        return self.models_dir / model_info["filename"]
+        
+        # Handle subdirectory
+        subdir = model_info.get("subdir", "")
+        if subdir:
+            target_dir = self.models_dir / subdir
+        else:
+            target_dir = self.models_dir
+            
+        return target_dir / model_info["filename"]
 
 
 # CLI usage

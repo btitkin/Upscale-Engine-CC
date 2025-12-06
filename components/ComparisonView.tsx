@@ -1,10 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UpscaleResult } from '../types';
-import { Download, Check, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Move, FileText } from 'lucide-react';
+import { Download, Check, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Move, FileText, Archive, Paintbrush } from 'lucide-react';
 import MetadataPanel from './MetadataPanel';
+import InpaintingModal from './InpaintingModal';
+import { exportAsZip } from '../services/exportService';
+import { inpaintImage } from '../services/upscaleService';
 
 interface ComparisonViewProps {
   result: UpscaleResult;
+  allResults?: UpscaleResult[];  // For batch export
   onClose: () => void;
   onNext?: () => void;
   onPrev?: () => void;
@@ -15,7 +19,7 @@ interface ComparisonViewProps {
 }
 
 const ComparisonView: React.FC<ComparisonViewProps> = ({
-  result, onClose, onNext, onPrev, hasNext, hasPrev, currentCount, totalCount
+  result, allResults, onClose, onNext, onPrev, hasNext, hasPrev, currentCount, totalCount
 }) => {
   const [sliderPos, setSliderPos] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null); // The transformed element
@@ -33,11 +37,17 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
   const [exportFormat, setExportFormat] = useState<'png' | 'jpg'>('png');
   const [metadataCollapsed, setMetadataCollapsed] = useState(false); // Pinned but collapsible
 
+  // Inpainting state
+  const [showInpainting, setShowInpainting] = useState(false);
+  const [isInpainting, setIsInpainting] = useState(false);
+  const [inpaintedUrl, setInpaintedUrl] = useState<string | null>(null);
+
   // Reset transform when result changes
   useEffect(() => {
     setScale(1);
     setPan({ x: 0, y: 0 });
     setSliderPos(50);
+    setInpaintedUrl(null); // Reset inpainted result
   }, [result]);
 
   // --- Zoom Logic ---
@@ -219,6 +229,16 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
             </button>
           </div>
 
+          {/* Edit Regions (Inpainting) */}
+          <button
+            onClick={() => setShowInpainting(true)}
+            className="px-3 py-1.5 text-xs font-bold rounded flex items-center gap-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-400 hover:from-purple-500/30 hover:to-pink-500/30 border border-purple-500/30 transition-all"
+            title="Edit specific regions with AI"
+          >
+            <Paintbrush size={12} />
+            EDIT REGIONS
+          </button>
+
           <button
             onClick={() => setMetadataCollapsed(!metadataCollapsed)}
             className={`px-3 py-1.5 text-xs font-bold rounded flex items-center gap-2 transition-colors ${!metadataCollapsed
@@ -232,6 +252,17 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
           <button onClick={handleDownload} className="px-4 py-1.5 bg-white text-black text-xs font-bold rounded hover:bg-gray-200 flex items-center gap-2 transition-colors">
             <Download size={12} /> EXPORT
           </button>
+
+          {/* Export All ZIP - only show if multiple results */}
+          {allResults && allResults.length > 1 && (
+            <button
+              onClick={() => exportAsZip(allResults, { format: exportFormat === 'jpg' ? 'jpeg' : 'png' })}
+              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded flex items-center gap-2 transition-colors"
+              title={`Export all ${allResults.length} images as ZIP`}
+            >
+              <Archive size={12} /> ZIP ({allResults.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -296,11 +327,46 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
 
       {/* Metadata Panel - Always show with collapse toggle */}
       <MetadataPanel
-        imageUrl={result.upscaledUrl}
+        imageUrl={inpaintedUrl || result.upscaledUrl}
         filename={result.filename}
         collapsed={metadataCollapsed}
         onToggle={() => setMetadataCollapsed(!metadataCollapsed)}
       />
+
+      {/* Inpainting Modal */}
+      {showInpainting && (
+        <InpaintingModal
+          imageUrl={inpaintedUrl || result.upscaledUrl}
+          imageWidth={result.width}
+          imageHeight={result.height}
+          onClose={() => setShowInpainting(false)}
+          isProcessing={isInpainting}
+          onApply={async (maskDataUrl, prompt, strength) => {
+            setIsInpainting(true);
+            try {
+              // Extract base64 from data URL
+              const imageB64 = (inpaintedUrl || result.upscaledUrl).split(',')[1];
+
+              const res = await inpaintImage(
+                'http://127.0.0.1:5555', // TODO: Get from settings
+                imageB64,
+                maskDataUrl,
+                prompt,
+                strength
+              );
+
+              // Update with inpainted result
+              setInpaintedUrl(`data:image/png;base64,${res.image}`);
+              setShowInpainting(false);
+            } catch (err) {
+              console.error('Inpainting failed:', err);
+              alert(`Inpainting failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+            } finally {
+              setIsInpainting(false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 };

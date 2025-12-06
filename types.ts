@@ -5,6 +5,10 @@ export interface UpscaleResult {
   width: number;
   height: number;
   processingTime: number;
+  // For export (optional, extracted from URLs if needed)
+  originalName?: string;
+  originalImage?: string;  // base64
+  processedImage?: string; // base64
 }
 
 export enum AppState {
@@ -24,8 +28,11 @@ export interface ProcessorSettings {
   enableUpscale: boolean;   // ON/OFF Upscale
   enableTiling: boolean;    // Tiling for large images (faster)
   enableRealism: boolean;   // "Make it Real"
+  useCustomRealism: boolean; // Use custom prompt for Make it Real
+  realismCustomPrompt: string; // Custom prompt for Make it Real
   enableSkin: boolean;      // "Skin Texture Details"
   enableHiresFix: boolean;  // "Hires Fix" logic
+  enableFaceEnhance: boolean; // GFPGAN face restoration
 
   // Advanced
   upscaleFactor: number;

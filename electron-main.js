@@ -43,7 +43,7 @@ function createWindow() {
             .then(() => console.log('[Window] URL loaded successfully'))
             .catch(err => console.error('[Window] Failed to load URL:', err));
 
-        mainWindow.webContents.openDevTools();
+        // mainWindow.webContents.openDevTools();
     }
 
     // Show window when ready

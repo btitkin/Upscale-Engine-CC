@@ -1,0 +1,28 @@
+# Upscale Engine CC - Required Models Definition
+# ================================================
+# This file defines all required models for Make It Real functionality.
+# Format: relative_path|url|size_mb|description
+#
+# The install_dependencies.py reads this file to download models.
+# Add new models by adding lines in the same format.
+
+# CLIP Text Encoder (Qwen 2.5 VL)
+clip/qwen_2.5_vl_7b_fp8_scaled.safetensors|https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Instruct_fp8_e4m3fn_scaled/resolve/main/qwen2.5_vl_7b_fp8_scaled.safetensors|8948|Qwen 2.5 VL CLIP encoder (FP8)
+
+# VAE
+vae/qwen_image_vae.safetensors|https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Instruct_fp8_e4m3fn_scaled/resolve/main/qwen_image_vae.safetensors|242|Qwen Image VAE
+
+# UNET (GGUF Quantized)
+Qwen_Image_Edit-Q4_K_S.gguf|https://huggingface.co/City96/Qwen2-VL-Image-Editing-gguf/resolve/main/Qwen_Image_Edit-Q4_K_S.gguf|4400|Qwen Image Edit GGUF (Q4_K_S)
+
+# LoRA - Lightning (faster generation, 4 steps)
+loras/Qwen-Image-Lightning-4steps-V1.0.safetensors|https://huggingface.co/Kijai/Qwen2-VL-Image-Editing-loras/resolve/main/Qwen-Image-Lightning-4steps-V1.0.safetensors|1620|Lightning LoRA for 4-step generation
+
+# LoRA - Anime to Realism
+loras/qwen anime into realism_base.safetensors|https://huggingface.co/Kijai/Qwen2-VL-Image-Editing-loras/resolve/main/qwen%20anime%20into%20realism_base.safetensors|563|Anime to Realism style transfer
+
+# ================== OPTIONAL MODELS ==================
+# Uncomment lines below to include additional models
+
+# Alternative GGUF (higher quality, larger file)
+# Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf|https://huggingface.co/City96/Qwen2-VL-Image-Editing-gguf/resolve/main/Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf|6000|Qwen Image Edit Plus GGUF

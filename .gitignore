@@ -32,11 +32,17 @@ backend/engines/__pycache__/
 *.pyo
 *.pyd
 
-# Models (large files - don't commit to git)
+# Models (large files - download via install_dependencies.py)
 models/*.pth
 models/*.safetensors
 models/*.gguf
 models/*.temp
+models/clip/
+models/vae/
+models/loras/
+models/unet/
+models/checkpoints/
+models/upscale_models/*.pth
 
 # Temp files
 backend/__start_with_venv.bat
@@ -64,4 +70,8 @@ qwen_debug_log.txt
 # Large model files (test models)
 tinyllama.gguf
 models/*.ckpt
+
+# ComfyUI (installed separately, too large for git)
+comfyui/
+
 

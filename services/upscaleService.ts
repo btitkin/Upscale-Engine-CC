@@ -61,8 +61,12 @@ const fileToBase64 = (file: File): Promise<string> => {
 const getImageDimensions = (file: File): Promise<{ width: number, height: number }> => {
     return new Promise((r) => {
         const i = new Image();
-        i.onload = () => r({ width: i.width, height: i.height });
-        i.src = URL.createObjectURL(file);
+        const objectUrl = URL.createObjectURL(file);
+        i.onload = () => {
+            URL.revokeObjectURL(objectUrl); // Prevent memory leak
+            r({ width: i.width, height: i.height });
+        };
+        i.src = objectUrl;
     });
 };
 
@@ -105,7 +109,8 @@ export const pollProgress = async (
 export const processImageLocally = async (
     file: File,
     settings: ProcessorSettings,
-    onProgress?: (update: ProgressUpdate) => void
+    onProgress?: (update: ProgressUpdate) => void,
+    onRequestStart?: (requestId: string) => void  // Callback to expose requestId for SSE
 ): Promise<UpscaleResult> => {
     const startTime = performance.now();
 
@@ -115,6 +120,11 @@ export const processImageLocally = async (
 
     // Generate Request ID for progress tracking
     const requestId = crypto.randomUUID();
+
+    // Notify caller about requestId for SSE connection
+    if (onRequestStart) {
+        onRequestStart(requestId);
+    }
 
     // 2. Determine which endpoint to use based on active modules
     let endpoint = '';
@@ -128,7 +138,13 @@ export const processImageLocally = async (
     if (settings.enableRealism) {
         // Phase 3: Qwen "Make it Real"
         endpoint = '/make-real';
-        payload.prompt = settings.prompt || 'convert to photorealistic, raw photo, dslr quality';
+
+        // Use custom prompt if enabled, otherwise use default
+        if (settings.useCustomRealism && settings.realismCustomPrompt?.trim()) {
+            payload.prompt = settings.realismCustomPrompt.trim();
+        } else {
+            payload.prompt = 'convert to photorealistic, raw photo, dslr quality';
+        }
 
         if (settings.enableUpscale) {
             payload.scale_factor = settings.upscaleFactor;
@@ -140,12 +156,18 @@ export const processImageLocally = async (
         payload.modules = {
             skin_texture: settings.enableSkin,
             hires_fix: settings.enableHiresFix,
-            upscale: settings.enableUpscale
+            upscale: settings.enableUpscale,
+            face_enhance: settings.enableFaceEnhance
         };
         payload.scale_factor = settings.upscaleFactor;
         payload.denoising_strength = settings.denoisingStrength;
         payload.cfg_scale = settings.cfgScale;
         payload.prompt = settings.prompt || '';
+
+    } else if (settings.enableFaceEnhance) {
+        // Face enhancement only
+        endpoint = '/face-enhance';
+        payload.upscale = settings.enableUpscale ? settings.upscaleFactor : 1;
 
     } else if (settings.enableUpscale) {
         // Phase 1: ESRGAN upscale only
@@ -202,6 +224,56 @@ export const processImageLocally = async (
         upscaledUrl: upscaledUrl,
         width: width,
         height: height,
-        processingTime: data.processing_time || duration
+        processingTime: data.processing_time || duration,
+        // Export fields
+        originalName: file.name,
+        originalImage: base64,
+        processedImage: data.image
+    };
+};
+
+/**
+ * Inpaint image using mask
+ * 
+ * @param backendUrl Backend server URL
+ * @param imageB64 Base64 encoded source image
+ * @param maskDataUrl Mask data URL (from canvas)
+ * @param prompt What to generate in masked areas
+ * @param strength Inpainting strength (0.3-1.0)
+ * @returns Inpainted image as base64
+ */
+export const inpaintImage = async (
+    backendUrl: string,
+    imageB64: string,
+    maskDataUrl: string,
+    prompt: string,
+    strength: number = 0.75
+): Promise<{ image: string; width: number; height: number; processingTime: number }> => {
+    const requestId = `inpaint-${Date.now()}`;
+
+    const response = await fetch(`${backendUrl}/inpaint`, {
+        method: 'POST',
+        headers: DEFAULT_HEADERS,
+        body: JSON.stringify({
+            image: imageB64,
+            mask: maskDataUrl,
+            prompt: prompt,
+            strength: strength,
+            request_id: requestId
+        })
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Inpainting failed: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    return {
+        image: data.image,
+        width: data.width,
+        height: data.height,
+        processingTime: data.processing_time
     };
 };

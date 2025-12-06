@@ -18,6 +18,8 @@ from engines.swinir_engine import SwinIREngine
 from engines.supresdiffgan_engine import SupResDiffGANEngine
 from engines.sdxl_engine import SDXLEngine
 from engines.qwen_engine import QwenEngine
+from engines.gfpgan_engine import GFPGANEngine
+from engines.inpaint_engine import InpaintEngine
 
 class ModelManager:
     def __init__(self, downloader: ModelDownloader):
@@ -100,6 +102,16 @@ class ModelManager:
                 path = self.downloader.get_model_path("qwen")
                 if not path: raise FileNotFoundError("Qwen model not found")
                 engine = QwenEngine(str(path), device=self.device)
+            
+            elif model_key == "gfpgan":
+                path = self.downloader.get_model_path("gfpgan")
+                if not path: raise FileNotFoundError("GFPGAN model not found")
+                engine = GFPGANEngine(str(path), device=self.device)
+            
+            elif model_key == "inpaint":
+                # Inpaint uses SDXL model or downloads from HuggingFace
+                path = self.downloader.get_model_path("sdxl")
+                engine = InpaintEngine(str(path) if path else None, device=self.device)
             
             else:
                 raise ValueError(f"Unknown model key: {model_key}")

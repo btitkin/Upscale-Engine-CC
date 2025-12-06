@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ProcessorSettings, ServerStatus } from '../types';
 import { Sliders, Zap, Activity, Server, RefreshCw, AlertCircle, ToggleLeft, ToggleRight, Check, Download } from 'lucide-react';
 import { checkServerStatus, setServerModel, downloadModels } from '../services/upscaleService';
+import { loadPresets, PromptPreset } from '../services/settingsService';
 
 interface SidebarProps {
   settings: ProcessorSettings;
@@ -9,9 +10,13 @@ interface SidebarProps {
   disabled: boolean;
   onProcess: () => void;
   queueCount: number;
+  // Progress props
+  progress?: number;
+  step?: string;
+  eta?: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onProcess, queueCount }) => {
+const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onProcess, queueCount, progress, step, eta }) => {
   const [serverStatus, setServerStatus] = useState<ServerStatus>({ online: false, models: [], upscalers: [] });
   const [isChecking, setIsChecking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -20,6 +25,7 @@ const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onPr
     model: string;
     speed_mbps: number;
   } | null>(null);
+  const [presets] = useState<PromptPreset[]>(loadPresets);
 
   // Poll download progress
   useEffect(() => {
@@ -176,6 +182,46 @@ const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onPr
               description="Uses Qwen VL to remaster details with photorealistic accuracy."
             />
 
+            {/* Custom Prompt Option (visible when Make it Real is enabled) */}
+            {settings.enableRealism && (
+              <div className="pl-2 border-l-2 border-emerald-500/30 space-y-2 mt-2 mb-2 transition-all">
+                {/* Prompt Presets */}
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase tracking-wider text-white/40 font-bold">Prompt Preset</label>
+                  <select
+                    value={settings.useCustomRealism ? 'custom' : (settings.realismCustomPrompt || presets[0]?.prompt || '')}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === 'custom') {
+                        update('useCustomRealism', true);
+                      } else {
+                        update('useCustomRealism', false);
+                        update('realismCustomPrompt', val);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-xs bg-[#1a1a1a] border border-white/10 rounded-lg text-white/90 focus:border-emerald-500/50 focus:outline-none cursor-pointer"
+                  >
+                    {presets.map((preset) => (
+                      <option key={preset.id} value={preset.prompt} className="bg-[#1a1a1a] text-white">
+                        {preset.name}
+                      </option>
+                    ))}
+                    <option value="custom" className="bg-[#1a1a1a] text-white">✏️ Custom Prompt...</option>
+                  </select>
+                </div>
+
+                {/* Custom Prompt Textarea (visible when Custom selected) */}
+                {settings.useCustomRealism && (
+                  <textarea
+                    value={settings.realismCustomPrompt}
+                    onChange={(e) => update('realismCustomPrompt', e.target.value)}
+                    placeholder="Enter your custom prompt... (e.g., 'make it photorealistic with dramatic lighting')"
+                    className="w-full h-20 px-3 py-2 text-xs bg-white/5 border border-white/10 rounded-lg text-white/90 placeholder-white/30 focus:border-emerald-500/50 focus:outline-none resize-none"
+                  />
+                )}
+              </div>
+            )}
+
             {/* 2. SKIN TEXTURE */}
             <ToggleItem
               label="SKIN TEXTURE DETAILS"
@@ -192,7 +238,15 @@ const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onPr
               description="Reduces hallucinations during enhancement."
             />
 
-            {/* 4. UPSCALE */}
+            {/* 4. FACE ENHANCE */}
+            <ToggleItem
+              label="FACE ENHANCE 👤"
+              active={settings.enableFaceEnhance}
+              onClick={() => update('enableFaceEnhance', !settings.enableFaceEnhance)}
+              description="GFPGAN face restoration and enhancement."
+            />
+
+            {/* 5. UPSCALE */}
             <ToggleItem
               label="UPSCALE IMAGE"
               active={settings.enableUpscale}
@@ -239,12 +293,12 @@ const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onPr
                     value={settings.upscaler}
                     onChange={(e) => update('upscaler', e.target.value)}
                     disabled={!serverStatus.online}
-                    className="w-full bg-black/20 border border-white/10 rounded px-2 py-1 text-xs text-white appearance-none outline-none"
+                    className="w-full bg-[#1a1a1a] border border-white/10 rounded px-2 py-1 text-xs text-white appearance-none outline-none"
                   >
                     {serverStatus.upscalers.length > 0 ? (
-                      serverStatus.upscalers.map(u => <option key={u} value={u}>{u}</option>)
+                      serverStatus.upscalers.map(u => <option key={u} value={u} className="bg-[#1a1a1a] text-white">{u}</option>)
                     ) : (
-                      <option value="RealESRGAN x4plus">RealESRGAN x4plus</option>
+                      <option value="RealESRGAN x4plus" className="bg-[#1a1a1a] text-white">RealESRGAN x4plus</option>
                     )}
                   </select>
                 </div>
@@ -287,25 +341,56 @@ const Sidebar: React.FC<SidebarProps> = ({ settings, setSettings, disabled, onPr
       </div>
 
       <div className="p-4 border-t border-app-border bg-black/20">
-        <button
-          onClick={onProcess}
-          disabled={disabled || !serverStatus.online}
-          className={`w-full py-3 rounded text-sm font-bold tracking-wide flex items-center justify-center gap-2 transition-all
-            ${disabled || !serverStatus.online ? 'bg-white/5 text-white/20 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-900/20'}
-          `}
-        >
-          {disabled ? (
-            <>
-              <Activity size={16} className="animate-spin" /> PROCESSING ({queueCount})
-            </>
-          ) : !serverStatus.online ? (
-            'OFFLINE'
-          ) : (
-            <>
-              <Zap size={16} fill="currentColor" /> RENDER
-            </>
-          )}
-        </button>
+        {disabled ? (
+          <div className="space-y-3">
+            {/* Progress Info */}
+            <div className="flex justify-between items-end">
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-white tracking-wide">
+                  Processing... {Math.round(progress || 0)}%
+                </span>
+                {eta && (
+                  <span className="text-[10px] text-emerald-400/80 font-mono mt-0.5">
+                    ETA: {eta}
+                  </span>
+                )}
+              </div>
+              <Activity size={14} className="text-emerald-500 animate-pulse mb-1" />
+            </div>
+
+            {/* Progress Bar */}
+            <div className="h-2 bg-black/50 rounded-full overflow-hidden border border-white/5">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-600 to-emerald-400 transition-all duration-300 ease-out"
+                style={{ width: `${progress || 0}%` }}
+              />
+            </div>
+
+            {/* Cancel Button (Small) */}
+            <button
+              onClick={onProcess} // This will trigger cancel if we change the handler in App.tsx or add a specific onCancel prop
+              className="w-full py-1.5 text-[10px] text-white/40 hover:text-red-400 transition-colors uppercase tracking-wider"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={onProcess}
+            disabled={!serverStatus.online}
+            className={`w-full py-3 rounded text-sm font-bold tracking-wide flex items-center justify-center gap-2 transition-all
+              ${!serverStatus.online ? 'bg-white/5 text-white/20 cursor-not-allowed' : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-900/20'}
+            `}
+          >
+            {!serverStatus.online ? (
+              'OFFLINE'
+            ) : (
+              <>
+                <Zap size={16} fill="currentColor" /> RENDER
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
