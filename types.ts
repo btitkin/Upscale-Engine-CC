@@ -32,13 +32,29 @@ export interface ProcessorSettings {
   realismCustomPrompt: string; // Custom prompt for Make it Real
   enableSkin: boolean;      // "Skin Texture Details"
   enableHiresFix: boolean;  // "Hires Fix" logic
+  hiresFixMode: 'normal' | 'advanced'; // New HiresFix mode
+  makeItRealDenoise: number; // Denoise for Make It Real KSampler (0.0-1.0)
+
+  // Custom SDXL/HiresFix Advanced Settings
+  sdxlSaturation: number; // For FastFilmGrain (Node 100)
+  sdxlSteps: number;      // For KSamplers
+  sdxlDenoise: number;    // For KSamplers
+
   enableFaceEnhance: boolean; // GFPGAN face restoration
+  enableSDXLUpscale: boolean; // SDXL Realistic Advanced Tiled Upscale
 
   // Advanced
   upscaleFactor: number;
   denoisingStrength: number;
   cfgScale: number;
   prompt: string;
+}
+
+export interface GlobalPreset {
+  id: string;
+  name: string;
+  settings: ProcessorSettings;
+  createdAt: number;
 }
 
 export interface ServerStatus {

@@ -50,6 +50,23 @@ export const downloadModels = async (url: string = BACKEND_URL): Promise<void> =
     if (data.status === 'error') throw new Error(data.message);
 };
 
+export const cancelProcessing = async (url: string = BACKEND_URL): Promise<void> => {
+    try {
+        // Send multiple interrupt requests - ComfyUI sometimes needs a few attempts
+        console.log('[Cancel] Sending interrupt signals...');
+
+        // Send 3 requests with small delays to ensure ComfyUI catches it
+        for (let i = 0; i < 3; i++) {
+            fetch(`${url}/cancel`, { method: 'POST' }).catch(() => { });
+            await new Promise(r => setTimeout(r, 100));
+        }
+
+        console.log('[Cancel] Interrupt signals sent');
+    } catch (e) {
+        console.error('[Cancel] Failed:', e);
+    }
+};
+
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve) => {
         const reader = new FileReader();
@@ -139,23 +156,62 @@ export const processImageLocally = async (
         // Phase 3: Qwen "Make it Real"
         endpoint = '/make-real';
 
-        // Use custom prompt if enabled, otherwise use default
-        if (settings.useCustomRealism && settings.realismCustomPrompt?.trim()) {
-            payload.prompt = settings.realismCustomPrompt.trim();
-        } else {
-            payload.prompt = 'convert to photorealistic, raw photo, dslr quality';
-        }
+        // realismCustomPrompt contains either preset prompt or custom prompt
+        // Always use it, with Chinese default as fallback
+        payload.prompt = settings.realismCustomPrompt?.trim() || 'realistic face, real eyes, realistic, (real,realistic,raw,photo,source_realistic:1.8), realistic body,';
+
+        // Pass HiresFix setting to backend
+        payload.use_hires_fix = settings.enableHiresFix;
+        payload.hires_fix_mode = settings.hiresFixMode; // 'normal' or 'advanced'
+
+        // Pass defaults/advanced settings for HiresFix/SDXL
+        payload.sdxl_saturation = settings.sdxlSaturation;
+        payload.sdxl_steps = settings.sdxlSteps;
+        payload.sdxl_denoise = settings.sdxlDenoise;
+
+        // Pass denoise value for KSampler control
+        payload.denoise = settings.makeItRealDenoise;
 
         if (settings.enableUpscale) {
             payload.scale_factor = settings.upscaleFactor;
         }
 
-    } else if (settings.enableSkin || settings.enableHiresFix) {
-        // Phase 2: SDXL img2img enhancement
+    } else if (settings.enableSDXLUpscale) {
+        // SDXL Realistic Advanced Tiled Upscale
+        endpoint = '/sdxl-upscale';
+        // No additional payload needed - workflow is self-contained
+        payload.scale_factor = settings.upscaleFactor;
+    } else if (settings.enableSDXLUpscale) {
+        // SDXL Realistic Advanced Tiled Upscale
+        endpoint = '/sdxl-upscale';
+        // No additional payload needed - workflow is self-contained
+        payload.scale_factor = settings.upscaleFactor;
+        payload.sdxl_saturation = settings.sdxlSaturation;
+        payload.sdxl_steps = settings.sdxlSteps;
+        payload.sdxl_denoise = settings.sdxlDenoise;
+
+    } else if (settings.enableHiresFix) {
+        // Standalone Hires Fix
+        if (settings.hiresFixMode === 'normal') {
+            // Normal: Uses SDXL Tiled Upscale at 1x
+            endpoint = '/sdxl-upscale';
+            payload.scale_factor = 1;
+            payload.sdxl_saturation = settings.sdxlSaturation;
+            payload.sdxl_steps = settings.sdxlSteps;
+            payload.sdxl_denoise = settings.sdxlDenoise;
+        } else {
+            // Advanced: Placeholder for future workflow (fallback to enhance for now)
+            endpoint = '/enhance';
+            payload.modules = { hires_fix: true };
+            payload.denoising_strength = settings.denoisingStrength;
+        }
+
+    } else if (settings.enableSkin) {
+        // Phase 2: SDXL img2img enhancement (Skin only now)
         endpoint = '/enhance';
         payload.modules = {
             skin_texture: settings.enableSkin,
-            hires_fix: settings.enableHiresFix,
+            hires_fix: false,
             upscale: settings.enableUpscale,
             face_enhance: settings.enableFaceEnhance
         };
@@ -231,6 +287,144 @@ export const processImageLocally = async (
         processedImage: data.image
     };
 };
+
+/**
+ * Process image from base64 data URL (for pipeline/history processing)
+ * Used when processing from history - takes the result of a previous operation
+ */
+export const processImageFromBase64 = async (
+    imageDataUrl: string,  // data:image/png;base64,... or just base64
+    filename: string,
+    settings: ProcessorSettings,
+    onProgress?: (update: ProgressUpdate) => void,
+    onRequestStart?: (requestId: string) => void
+): Promise<UpscaleResult> => {
+    const startTime = performance.now();
+
+    // Extract base64 data from data URL if needed
+    let base64 = imageDataUrl;
+    if (imageDataUrl.startsWith('data:')) {
+        base64 = imageDataUrl.split(',')[1];
+    }
+
+    // Get dimensions from data URL
+    const dims = await new Promise<{ width: number; height: number }>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.width, height: img.height });
+        img.src = imageDataUrl.startsWith('data:') ? imageDataUrl : `data:image/png;base64,${imageDataUrl}`;
+    });
+
+    const requestId = crypto.randomUUID();
+    if (onRequestStart) {
+        onRequestStart(requestId);
+    }
+
+    // Determine endpoint based on settings (same logic as processImageLocally)
+    let endpoint = '';
+    let payload: any = {
+        image: base64,
+        request_id: requestId,
+        use_tiling: settings.enableTiling
+    };
+
+    if (settings.enableRealism) {
+        endpoint = '/make-real';
+        payload.prompt = settings.realismCustomPrompt?.trim() || 'realistic face, real eyes, realistic, (real,realistic,raw,photo,source_realistic:1.8), realistic body,';
+        payload.use_hires_fix = settings.enableHiresFix;
+        payload.hires_fix_mode = settings.hiresFixMode;
+        payload.denoise = settings.makeItRealDenoise;
+        if (settings.enableUpscale) {
+            payload.scale_factor = settings.upscaleFactor;
+        }
+    } else if (settings.enableSDXLUpscale) {
+        // SDXL Realistic Advanced Tiled Upscale
+        endpoint = '/sdxl-upscale';
+        // No additional payload needed - workflow is self-contained
+        payload.scale_factor = settings.upscaleFactor;
+    } else if (settings.enableSDXLUpscale) {
+        // SDXL Realistic Advanced Tiled Upscale
+        endpoint = '/sdxl-upscale';
+        // No additional payload needed - workflow is self-contained
+        payload.scale_factor = settings.upscaleFactor;
+
+    } else if (settings.enableHiresFix) {
+        // Standalone Hires Fix
+        if (settings.hiresFixMode === 'normal') {
+            endpoint = '/sdxl-upscale';
+            payload.scale_factor = 1;
+        } else {
+            endpoint = '/enhance';
+            payload.modules = { hires_fix: true };
+            payload.denoising_strength = settings.denoisingStrength;
+        }
+
+    } else if (settings.enableSkin) {
+        endpoint = '/enhance';
+        payload.modules = {
+            skin_texture: settings.enableSkin,
+            hires_fix: false,
+            upscale: settings.enableUpscale,
+            face_enhance: settings.enableFaceEnhance
+        };
+        payload.scale_factor = settings.upscaleFactor;
+        payload.denoising_strength = settings.denoisingStrength;
+        payload.cfg_scale = settings.cfgScale;
+        payload.prompt = settings.prompt || '';
+    } else if (settings.enableFaceEnhance) {
+        endpoint = '/face-enhance';
+        payload.upscale = settings.enableUpscale ? settings.upscaleFactor : 1;
+    } else if (settings.enableUpscale) {
+        endpoint = '/upscale';
+        payload.upscaler = settings.upscaler;
+        payload.scale_factor = settings.upscaleFactor;
+    } else {
+        throw new Error('No processing modules enabled');
+    }
+
+    if (onProgress) {
+        pollProgress(requestId, onProgress).catch(err => {
+            console.error('Progress polling error:', err);
+        });
+    }
+
+    const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+        method: 'POST',
+        headers: DEFAULT_HEADERS,
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        if (response.status === 501) {
+            throw new Error(`${errorData.error || 'Feature not yet implemented'}`);
+        }
+        throw new Error(errorData.error || `Backend error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    if (!data.image) {
+        throw new Error("Backend returned no image data");
+    }
+
+    const duration = (performance.now() - startTime) / 1000;
+    const upscaledUrl = `data:image/png;base64,${data.image}`;
+    const width = data.width || (dims.width * settings.upscaleFactor);
+    const height = data.height || (dims.height * settings.upscaleFactor);
+
+    return {
+        filename: filename,
+        originalUrl: imageDataUrl,
+        upscaledUrl: upscaledUrl,
+        width: width,
+        height: height,
+        processingTime: data.processing_time || duration,
+        originalName: filename,
+        originalImage: base64,
+        processedImage: data.image
+    };
+};
+
 
 /**
  * Inpaint image using mask

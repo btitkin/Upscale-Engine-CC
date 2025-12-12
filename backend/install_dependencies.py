@@ -176,16 +176,37 @@ def install_pytorch_cuda() -> bool:
     """Install PyTorch with CUDA support"""
     print_step("Checking PyTorch with CUDA...")
     
+    # Check PyTorch via pip show instead of importing (to avoid locking packages)
     try:
-        import torch
-        if torch.cuda.is_available():
-            print_success(f"PyTorch {torch.__version__} with CUDA already installed")
-            print_info(f"GPU: {torch.cuda.get_device_name(0)}")
-            return True
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "show", "torch"],
+            capture_output=True, text=True, check=False
+        )
+        if result.returncode == 0:
+            # Parse version from pip show output
+            version = None
+            for line in result.stdout.split('\n'):
+                if line.startswith('Version:'):
+                    version = line.split(':', 1)[1].strip()
+                    break
+            
+            if version and 'cu' in version:
+                print_success(f"PyTorch {version} with CUDA already installed")
+                # Check GPU availability via subprocess to avoid importing torch
+                gpu_check = subprocess.run(
+                    [sys.executable, "-c", 
+                     "import torch; print(torch.cuda.get_device_name(0)) if torch.cuda.is_available() else print('NO_CUDA')"],
+                    capture_output=True, text=True, check=False
+                )
+                if gpu_check.returncode == 0 and gpu_check.stdout.strip() != 'NO_CUDA':
+                    print_info(f"GPU: {gpu_check.stdout.strip()}")
+                return True
+            elif version:
+                print_info(f"PyTorch {version} (CPU-only) detected, upgrading to CUDA...")
         else:
-            print_info("PyTorch CPU-only detected, upgrading to CUDA...")
-    except ImportError:
-        print_info("PyTorch not found, installing with CUDA...")
+            print_info("PyTorch not found, installing with CUDA...")
+    except Exception as e:
+        print_info(f"PyTorch check failed: {e}, installing...")
     
     # Uninstall CPU version
     run_pip(["uninstall", "-y", "torch", "torchvision", "torchaudio"])

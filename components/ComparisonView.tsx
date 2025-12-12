@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UpscaleResult } from '../types';
-import { Download, Check, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Move, FileText, Archive, Paintbrush } from 'lucide-react';
+import { Download, Check, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Move, FileText, Archive, Paintbrush, Eye, Image as ImageIcon, Columns } from 'lucide-react';
 import MetadataPanel from './MetadataPanel';
 import InpaintingModal from './InpaintingModal';
+import HistoryToolbar from './HistoryToolbar';
 import { exportAsZip } from '../services/exportService';
 import { inpaintImage } from '../services/upscaleService';
 
@@ -16,10 +17,22 @@ interface ComparisonViewProps {
   hasPrev: boolean;
   currentCount: number;
   totalCount: number;
+  // History props
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  showOriginal?: boolean;
+  onToggleOriginal?: () => void;
+  historyStepInfo?: string;
 }
 
+// View modes
+type ViewMode = 'original' | 'processed' | 'comparison';
+
 const ComparisonView: React.FC<ComparisonViewProps> = ({
-  result, allResults, onClose, onNext, onPrev, hasNext, hasPrev, currentCount, totalCount
+  result, allResults, onClose, onNext, onPrev, hasNext, hasPrev, currentCount, totalCount,
+  canUndo, canRedo, onUndo, onRedo, showOriginal, onToggleOriginal, historyStepInfo
 }) => {
   const [sliderPos, setSliderPos] = useState(50);
   const containerRef = useRef<HTMLDivElement>(null); // The transformed element
@@ -29,13 +42,16 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
   const [isSliderDragging, setIsSliderDragging] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
 
+  // View Mode State
+  const [viewMode, setViewMode] = useState<ViewMode>('comparison');
+
   // Transform State
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const startPanRef = useRef({ x: 0, y: 0 });
 
   const [exportFormat, setExportFormat] = useState<'png' | 'jpg'>('png');
-  const [metadataCollapsed, setMetadataCollapsed] = useState(false); // Pinned but collapsible
+  const [metadataCollapsed, setMetadataCollapsed] = useState(true); // Start collapsed
 
   // Inpainting state
   const [showInpainting, setShowInpainting] = useState(false);
@@ -55,7 +71,7 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
     e.preventDefault();
     e.stopPropagation();
 
-    if (!containerRef.current) return;
+    if (!viewportRef.current || !containerRef.current) return;
 
     const zoomIntensity = 0.1;
     const direction = e.deltaY > 0 ? -1 : 1;
@@ -63,25 +79,47 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
 
     // Calculate new scale
     let newScale = scale + (scale * factor);
-    newScale = Math.max(1, Math.min(newScale, 8)); // Clamp 1x to 8x
+    newScale = Math.max(0.25, Math.min(newScale, 8)); // Clamp 0.25x to 8x
 
-    // Calculate mouse position relative to the container (before zoom)
-    const rect = containerRef.current.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    // Get viewport rect
+    const viewportRect = viewportRef.current.getBoundingClientRect();
 
-    if (newScale === 1) {
-      setPan({ x: 0, y: 0 }); // Reset to center/fit
+    // Calculate mouse position relative to the viewport center
+    const viewportCenterX = viewportRect.width / 2;
+    const viewportCenterY = viewportRect.height / 2;
+    const mouseX = e.clientX - viewportRect.left;
+    const mouseY = e.clientY - viewportRect.top;
+
+    if (newScale <= 1) {
+      setPan({ x: 0, y: 0 }); // Reset to center/fit when at or below 100%
     } else {
-      const scaleRatio = newScale / scale;
-      // Adjust pan to keep mouse point stationary
-      setPan(prev => ({
-        x: e.clientX - (e.clientX - prev.x) * scaleRatio,
-        y: e.clientY - (e.clientY - prev.y) * scaleRatio
-      }));
+      // Calculate the offset from center to mouse position
+      const offsetX = mouseX - viewportCenterX;
+      const offsetY = mouseY - viewportCenterY;
+
+      // The point under the mouse (in pre-zoom coordinates)
+      const pointX = (offsetX - pan.x) / scale;
+      const pointY = (offsetY - pan.y) / scale;
+
+      // After zoom, this same point should still be at the mouse position
+      // newPan + pointInNewScale = offsetFromCenter
+      // newPan = offsetFromCenter - point * newScale
+      setPan({
+        x: offsetX - pointX * newScale,
+        y: offsetY - pointY * newScale
+      });
     }
 
     setScale(newScale);
+  };
+
+  // Handle zoom slider
+  const handleZoomSlider = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newScale = parseFloat(e.target.value);
+    setScale(newScale);
+    if (newScale <= 1) {
+      setPan({ x: 0, y: 0 });
+    }
   };
 
   // --- Interaction Logic ---
@@ -168,10 +206,22 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
     };
   };
 
+  // Track original image dimensions
+  const [originalDimensions, setOriginalDimensions] = useState<{ width: number, height: number } | null>(null);
+
+  // Load original image dimensions
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => {
+      setOriginalDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+    };
+    img.src = result.originalUrl;
+  }, [result.originalUrl]);
+
   return (
     <div className="flex-1 h-full flex flex-col bg-[#050505]">
-      {/* Toolbar */}
-      <div className="h-12 border-b border-white/10 flex items-center justify-between px-4 bg-app-panel z-20 relative">
+      {/* Minimal Top Bar - Just Back and Navigation */}
+      <div className="h-10 border-b border-white/10 flex items-center justify-between px-4 bg-app-panel z-20 relative">
         <div className="flex items-center gap-4 text-xs">
           <button onClick={onClose} className="px-3 py-1 bg-white/5 hover:bg-white/10 rounded text-white/60 hover:text-white font-bold transition-colors">
             BACK
@@ -201,13 +251,177 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
 
           <span className="text-white/40 border-l border-white/10 pl-4">File:</span>
           <span className="font-mono text-white max-w-[150px] truncate" title={result.filename}>{result.filename}</span>
+        </div>
 
-          {/* Zoom Indicator */}
-          <div className="flex items-center gap-2 ml-4 text-app-muted">
-            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${scale > 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5'}`}>
-              {Math.round(scale * 100)}%
-            </span>
-            {scale > 1 && <span className="text-[10px] opacity-50 flex items-center gap-1"><Move size={10} /> DRAG TO PAN</span>}
+        {/* Zoom Indicator */}
+        <div className="flex items-center gap-2 text-app-muted">
+          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${scale > 1 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5'}`}>
+            {Math.round(scale * 100)}%
+          </span>
+          {scale > 1 && <span className="text-[10px] opacity-50 flex items-center gap-1"><Move size={10} /> DRAG TO PAN</span>}
+        </div>
+      </div>
+
+      {/* Viewport - Captures events */}
+      <div
+        ref={viewportRef}
+        className="flex-1 relative overflow-hidden flex items-center justify-center bg-[#09090b] select-none cursor-default"
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+      >
+        {/* Content Container - Transformed */}
+        <div
+          ref={containerRef}
+          className="relative shadow-2xl bg-[#111] group origin-center will-change-transform"
+          style={{
+            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
+            cursor: isPanning ? 'grabbing' : (scale > 1 ? 'grab' : 'default'),
+            transition: isPanning ? 'none' : 'transform 0.1s ease-out'
+          }}
+        >
+          {/* View Mode: Original Only */}
+          {viewMode === 'original' && (
+            <img
+              src={result.originalUrl}
+              alt="Original"
+              className="block max-w-[calc(100vw-64px)] max-h-[calc(100vh-160px)] w-auto h-auto object-contain pointer-events-none"
+              draggable={false}
+            />
+          )}
+
+          {/* View Mode: Processed Only */}
+          {viewMode === 'processed' && (
+            <img
+              src={inpaintedUrl || result.upscaledUrl}
+              alt="Processed"
+              className="block max-w-[calc(100vw-64px)] max-h-[calc(100vh-160px)] w-auto h-auto object-contain pointer-events-none"
+              draggable={false}
+            />
+          )}
+
+          {/* View Mode: Comparison with Slider */}
+          {viewMode === 'comparison' && (
+            <>
+              {/* Driver Image (Processed) */}
+              <img
+                src={inpaintedUrl || result.upscaledUrl}
+                alt="Luma Render"
+                className="block max-w-[calc(100vw-64px)] max-h-[calc(100vh-160px)] w-auto h-auto object-contain pointer-events-none"
+                draggable={false}
+              />
+
+              {/* Overlay Image (Original) */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
+              >
+                <img
+                  src={result.originalUrl}
+                  alt="Original"
+                  className="w-full h-full object-contain"
+                />
+              </div>
+
+              {/* Slider Handle */}
+              <div
+                className="slider-handle absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-20 flex items-center justify-center group-hover:shadow-[0_0_15px_rgba(255,255,255,0.5)] transition-shadow"
+                style={{ left: `${sliderPos}%`, transform: 'translateX(-50%)' }}
+              >
+                <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg transform transition-transform hover:scale-110 pointer-events-none">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="rotate-180 absolute"><path d="m9 18 6-6-6-6" /></svg>
+                </div>
+              </div>
+
+              {/* Labels with Resolution */}
+              {scale < 2 && (
+                <>
+                  <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-white/80 pointer-events-none z-10 border border-white/10">
+                    ORIGINAL {originalDimensions && <span className="text-white/50 ml-1">{originalDimensions.width}×{originalDimensions.height}</span>}
+                  </div>
+                  <div className="absolute bottom-4 right-4 bg-emerald-900/50 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-emerald-400 pointer-events-none z-10 border border-emerald-500/20">
+                    PROCESSED <span className="text-emerald-300/70 ml-1">{result.width}×{result.height}</span>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          {/* Mode Label for single views with Resolution */}
+          {viewMode !== 'comparison' && scale < 2 && (
+            <div className={`absolute bottom-4 left-4 backdrop-blur px-2 py-1 rounded text-[10px] font-bold pointer-events-none z-10 border ${viewMode === 'original'
+              ? 'bg-blue-900/50 text-blue-400 border-blue-500/20'
+              : 'bg-emerald-900/50 text-emerald-400 border-emerald-500/20'
+              }`}>
+              {viewMode === 'original' ? (
+                <>ORIGINAL {originalDimensions && <span className="opacity-70 ml-1">{originalDimensions.width}×{originalDimensions.height}</span>}</>
+              ) : (
+                <>PROCESSED <span className="opacity-70 ml-1">{result.width}×{result.height}</span></>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* History Toolbar - floating at bottom of viewport */}
+        {onUndo && onRedo && onToggleOriginal && (
+          <HistoryToolbar
+            canUndo={canUndo ?? false}
+            canRedo={canRedo ?? false}
+            onUndo={onUndo}
+            onRedo={onRedo}
+            showOriginal={showOriginal ?? false}
+            onToggleOriginal={onToggleOriginal}
+            historyStepInfo={historyStepInfo}
+          />
+        )}
+      </div>
+
+      {/* Bottom Toolbar - View Mode, Zoom, Export */}
+      <div className="h-12 border-t border-white/10 flex items-center justify-between px-4 bg-app-panel z-20 relative shrink-0">
+        <div className="flex items-center gap-3">
+          {/* View Mode Selector */}
+          <div className="flex items-center bg-black/40 rounded-lg p-0.5 border border-white/10">
+            <button
+              onClick={() => setViewMode('original')}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all flex items-center gap-1.5 ${viewMode === 'original' ? 'bg-blue-500/30 text-blue-400 shadow-sm' : 'text-white/40 hover:text-white/60'}`}
+              title="Show original image"
+            >
+              <Eye size={12} /> Original
+            </button>
+            <div className="w-px h-3 bg-white/10 mx-0.5"></div>
+            <button
+              onClick={() => setViewMode('processed')}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all flex items-center gap-1.5 ${viewMode === 'processed' ? 'bg-emerald-500/30 text-emerald-400 shadow-sm' : 'text-white/40 hover:text-white/60'}`}
+              title="Show processed image"
+            >
+              <ImageIcon size={12} /> Processed
+            </button>
+            <div className="w-px h-3 bg-white/10 mx-0.5"></div>
+            <button
+              onClick={() => setViewMode('comparison')}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-md transition-all flex items-center gap-1.5 ${viewMode === 'comparison' ? 'bg-purple-500/30 text-purple-400 shadow-sm' : 'text-white/40 hover:text-white/60'}`}
+              title="Split comparison view"
+            >
+              <Columns size={12} /> Compare
+            </button>
+          </div>
+
+          {/* Zoom Slider */}
+          <div className="flex items-center gap-2 bg-black/40 rounded-lg px-2 py-1 border border-white/10">
+            <ZoomOut size={12} className="text-white/40" />
+            <input
+              type="range"
+              min="0.25"
+              max="8"
+              step="0.1"
+              value={scale}
+              onChange={handleZoomSlider}
+              className="w-20 h-1 accent-emerald-500 cursor-pointer"
+              title={`Zoom: ${Math.round(scale * 100)}%`}
+            />
+            <ZoomIn size={12} className="text-white/40" />
+            <span className="text-[10px] font-mono text-white/60 w-8">{Math.round(scale * 100)}%</span>
           </div>
         </div>
 
@@ -262,65 +476,6 @@ const ComparisonView: React.FC<ComparisonViewProps> = ({
             >
               <Archive size={12} /> ZIP ({allResults.length})
             </button>
-          )}
-        </div>
-      </div>
-
-      {/* Viewport - Captures events */}
-      <div
-        ref={viewportRef}
-        className="flex-1 relative overflow-hidden flex items-center justify-center bg-[#09090b] select-none cursor-default"
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-      >
-        {/* Content Container - Transformed */}
-        <div
-          ref={containerRef}
-          className="relative shadow-2xl bg-[#111] group origin-center will-change-transform"
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`,
-            cursor: isPanning ? 'grabbing' : (scale > 1 ? 'grab' : 'default'),
-            transition: isPanning ? 'none' : 'transform 0.1s ease-out'
-          }}
-        >
-          {/* Driver Image */}
-          <img
-            src={result.upscaledUrl}
-            alt="Luma Render"
-            className="block max-w-[calc(100vw-64px)] max-h-[calc(100vh-160px)] w-auto h-auto object-contain pointer-events-none"
-            draggable={false}
-          />
-
-          {/* Overlay Image (Original) */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
-          >
-            <img
-              src={result.originalUrl}
-              alt="Original"
-              className="w-full h-full object-contain"
-            />
-          </div>
-
-          {/* Slider Handle */}
-          <div
-            className="slider-handle absolute top-0 bottom-0 w-1 bg-white cursor-ew-resize z-20 flex items-center justify-center group-hover:shadow-[0_0_15px_rgba(255,255,255,0.5)] transition-shadow"
-            style={{ left: `${sliderPos}%`, transform: 'translateX(-50%)' }}
-          >
-            <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg transform transition-transform hover:scale-110 pointer-events-none">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="rotate-180 absolute"><path d="m9 18 6-6-6-6" /></svg>
-            </div>
-          </div>
-
-          {/* Labels */}
-          {scale < 2 && (
-            <>
-              <div className="absolute bottom-4 left-4 bg-black/50 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-white/80 pointer-events-none z-10 border border-white/10">ORIGINAL</div>
-              <div className="absolute bottom-4 right-4 bg-emerald-900/50 backdrop-blur px-2 py-1 rounded text-[10px] font-bold text-emerald-400 pointer-events-none z-10 border border-emerald-500/20">LUMA RENDER</div>
-            </>
           )}
         </div>
       </div>

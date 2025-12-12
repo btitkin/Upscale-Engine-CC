@@ -29,80 +29,77 @@ class ModelDownloader:
     def _load_manifest(self) -> Dict:
         """Load model manifest defining what to download"""
         default_manifest = {
-            "upscale": {
+            "upscale_esrgan": {
                 "name": "RealESRGAN x4plus",
                 "filename": "RealESRGAN_x4plus.pth",
                 "url": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth",
                 "size": 67040989,
-                "type": "esrgan"
+                "type": "upscale",
+                "subdir": "upscale_models"
             },
-            "swinir": {
+            "upscale_swinir": {
                 "name": "SwinIR-L 4x",
                 "filename": "RealSR_BSRGAN_SwinIR_L.pth",
                 "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth",
                 "size": 284951549,
-                "type": "swinir"
+                "type": "upscale",
+                "subdir": "upscale_models"
             },
-            "sdxl": {
-                "name": "Juggernaut XL 9.0",
-                "filename": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
-                "url": "https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
-                "size": 7110000000,
-                "type": "sdxl"
-            },
-            "qwen": {
-                "name": "Qwen Image Edit Q4_K_S (12GB)",
-                "filename": "Qwen_Image_Edit-Q4_K_S.gguf",
-                "url": "https://huggingface.co/city96/Qwen2-VL-Instruct-GGUF/resolve/main/qwen_image/Qwen_Image_Edit-Q4_K_S.gguf",
-                "size": 12600000000,
-                "type": "gguf",
-                "subdir": ""
-            },
-            "qwen_vae": {
-                "name": "Qwen Image VAE",
-                "filename": "qwen_image_vae.safetensors",
-                "url": "https://huggingface.co/city96/GGUF-Tools/resolve/main/qwen_image/qwen_image_vae.safetensors",
-                "size": 254000000,
-                "type": "vae",
-                "subdir": "vae"
-            },
-            "qwen_clip": {
-                "name": "Qwen 2.5 VL 7B FP8 CLIP",
-                "filename": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
-                "url": "https://huggingface.co/city96/GGUF-Tools/resolve/main/qwen_image/qwen_2.5_vl_7b_fp8_scaled.safetensors",
-                "size": 9400000000,
-                "type": "clip",
-                "subdir": "clip"
-            },
-            "qwen_lightning_lora": {
-                "name": "Qwen Lightning 4-Steps LoRA",
-                "filename": "Qwen-Image-Lightning-4steps-V1.0.safetensors",
-                "url": "https://huggingface.co/city96/GGUF-Tools/resolve/main/qwen_image/Qwen-Image-Lightning-4steps-V1.0.safetensors",
-                "size": 1700000000,
-                "type": "lora",
-                "subdir": "loras"
-            },
-            "makeitreal_lora": {
-                "name": "Qwen Anime to Realism LoRA",
-                "filename": "qwen anime into realism_base.safetensors",
-                "url": "https://huggingface.co/caganseyrek/qwen-image-loaders/resolve/main/loras/qwen%20anime%20into%20realism_base.safetensors",
-                "size": 590000000,
-                "type": "lora",
-                "subdir": "loras"
-            },
-            "supresdiffgan": {
-                "name": "SupResDiffGAN 4x",
-                "filename": "SupResDiffGAN-imagenet.ckpt",
-                "url": "https://github.com/Dawir7/SupResDiffGAN/releases/download/v1.0/SupResDiffGAN-imagenet.ckpt",
-                "size": 1014183293,
-                "type": "supresdiffgan"
+            "upscale_ultrasharp": {
+                "name": "4x-UltraSharp",
+                "filename": "4x-UltraSharp.pth",
+                "url": "https://github.com/Sirosky/Upscale-Hub/releases/download/main/4x-UltraSharp.pth",
+                "size": 66961958,
+                "type": "upscale",
+                "subdir": "upscale_models"
             },
             "gfpgan": {
                 "name": "GFPGAN v1.4 (Face Enhance)",
                 "filename": "GFPGANv1.4.pth",
                 "url": "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth",
                 "size": 348632874,
-                "type": "gfpgan"
+                "type": "upscale",
+                "subdir": "upscale_models"
+            },
+            "checkpoint_makeitreal": {
+                "name": "Hardcore Asian Cosplay XL V10",
+                "filename": "hardcoreAsianCosplay_xlV10.safetensors",
+                "url": "https://civitai.com/api/download/models/MANUAL",
+                "size": 6938040682,
+                "type": "checkpoint",
+                "subdir": "checkpoints"
+            },
+            "checkpoint_realvis": {
+                "name": "RealVisXL V5.0 Baked VAE",
+                "filename": "realvisxlV50_v50Bakedvae.safetensors",
+                "url": "https://civitai.com/api/download/models/MANUAL",
+                "size": 6938065488,
+                "type": "checkpoint",
+                "subdir": "checkpoints"
+            },
+            "lora_skin_detailer": {
+                "name": "Super Skin Detailer LoRA",
+                "filename": "Super_Skin_Detailer_By_Stable_Yogi_SD0_V1.safetensors",
+                "url": "https://civitai.com/api/download/models/MANUAL",
+                "size": 114429101,
+                "type": "lora",
+                "subdir": "loras"
+            },
+            "controlnet_union": {
+                "name": "ControlNet Union SDXL 1.0 ProMax",
+                "filename": "controlnet-union-sdxl-1.0-promax.safetensors",
+                "url": "https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors",
+                "size": 2513342408,
+                "type": "controlnet",
+                "subdir": "controlnet"
+            },
+            "controlnet_depth": {
+                "name": "Diffusers XL Depth Full",
+                "filename": "diffusers_xl_depth_full.safetensors",
+                "url": "https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.fp16.safetensors",
+                "size": 2502139104,
+                "type": "controlnet",
+                "subdir": "controlnet"
             }
         }
         

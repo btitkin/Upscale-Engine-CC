@@ -1,0 +1,35 @@
+# ===========================================
+# UPSCALE ENGINE CC - Required Models
+# ===========================================
+# Download these models and place them in the appropriate folders.
+# Folder structure: models/<category>/
+
+# -------------------------------------------
+# UPSCALE MODELS (upscale_models/)
+# -------------------------------------------
+RealESRGAN_x4plus.pth
+RealSR_BSRGAN_SwinIR_L.pth
+4x-UltraSharp.pth
+GFPGANv1.4.pth
+
+# -------------------------------------------
+# CHECKPOINTS (checkpoints/)
+# -------------------------------------------
+hardcoreAsianCosplay_xlV10.safetensors       # Main checkpoint for Make It Real
+realvisxlV50_v50Bakedvae.safetensors         # Checkpoint for HiresFix step
+
+# -------------------------------------------
+# LORAS (loras/)
+# -------------------------------------------
+Super_Skin_Detailer_By_Stable_Yogi_SD0_V1.safetensors
+
+# -------------------------------------------
+# CONTROLNET (controlnet/)
+# -------------------------------------------
+controlnet-union-sdxl-1.0-promax.safetensors    # ControlNet Union SDXL ProMax
+diffusers_xl_depth_full.safetensors             # Depth ControlNet
+
+# ===========================================
+# NOTE: Large files are NOT included in git.
+# Use the in-app downloader or download manually.
+# ===========================================

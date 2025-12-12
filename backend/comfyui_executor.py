@@ -26,7 +26,10 @@ COMFYUI_URL = f"http://{COMFYUI_HOST}:{COMFYUI_PORT}"
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_DIR = SCRIPT_DIR.parent
 COMFYUI_DIR = PROJECT_DIR / "comfyui"
-WORKFLOW_PATH = PROJECT_DIR / "models" / "workflow" / "qwen-makeitreal.json"
+WORKFLOW_DIR = PROJECT_DIR / "models" / "workflow"
+WORKFLOW_NORMAL = WORKFLOW_DIR / "MakeItReal_Normal.json"
+WORKFLOW_HIRESFIX = WORKFLOW_DIR / "MakeItReal_HiresFix.json"
+WORKFLOW_SDXL_TILED_UPSCALE = WORKFLOW_DIR / "SDXL_TiledUpscale.json"
 
 
 class ComfyUIExecutor:
@@ -84,6 +87,9 @@ class ComfyUIExecutor:
             "--listen", COMFYUI_HOST,
             "--port", str(COMFYUI_PORT),
             "--disable-auto-launch",
+            "--preview-method", "auto",
+            "--lowvram",  # Aggressively unload models from VRAM when not in use
+            "--use-pytorch-cross-attention",  # Same as Stability Matrix
         ]
         
         logging.info(f"Starting ComfyUI: {' '.join(cmd)}")
@@ -94,21 +100,26 @@ class ComfyUIExecutor:
             if sys.platform == 'win32':
                 creationflags = subprocess.CREATE_NO_WINDOW
             
+            # Set up environment with UTF-8 encoding to handle emoji in output
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
+            env['PYTHONUTF8'] = '1'
+            # Disable tqdm to prevent stderr flush issues
+            env['TQDM_DISABLE'] = '1'
+            env['DISABLE_TQDM'] = '1'
+            env['COMFY_DISABLE_TQDM'] = '1'
+            # Force no unbuffered output
+            env['PYTHONUNBUFFERED'] = '0'
+            
             self.process = subprocess.Popen(
                 cmd,
                 cwd=str(COMFYUI_DIR),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
+                stdout=subprocess.DEVNULL,  # Also suppress stdout to prevent tqdm flush errors
+                stderr=subprocess.DEVNULL,  # Suppress stderr to avoid tqdm flush errors
+                env=env,
                 creationflags=creationflags
             )
-            
-            # Background thread to read output
-            def read_output():
-                for line in self.process.stdout:
-                    logging.debug(f"[ComfyUI] {line.strip()}")
-            
-            threading.Thread(target=read_output, daemon=True).start()
+            # Note: stdout/stderr are redirected to DEVNULL to prevent tqdm flush issues
             
         except Exception as e:
             logging.error(f"Failed to start ComfyUI: {e}")
@@ -135,38 +146,49 @@ class ComfyUIExecutor:
                 self.process.kill()
             self.process = None
     
-    def load_workflow(self) -> Dict:
-        """Load and cache workflow JSON"""
-        if self._workflow_cache is None:
-            with open(WORKFLOW_PATH, 'r', encoding='utf-8') as f:
-                self._workflow_cache = json.load(f)
-        return self._workflow_cache.copy()
+    def load_workflow(self, use_hires_fix: bool = False) -> Dict:
+        """Load workflow JSON (Normal or HiresFix version)"""
+        workflow_path = WORKFLOW_HIRESFIX if use_hires_fix else WORKFLOW_NORMAL
+        logging.info(f"Loading workflow: {workflow_path.name}")
+        with open(workflow_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
     
     def prepare_workflow(self, workflow: Dict, image_b64: str, prompt: str) -> Dict:
         """
         Prepare workflow for API execution.
-        
-        Modifies:
-        - LoadImage node: sets input image (we'll upload separately)
-        - TextEncodeQwenImageEdit: sets the prompt
+        Supports both frontend format (list of nodes) and API format (dict with IDs as keys).
+        Updates prompt in workflow if provided.
         """
+        # Check if this is API format (dict with numeric string keys like "1", "2")
+        if "nodes" not in workflow and any(k.isdigit() for k in workflow.keys()):
+            # API format - nodes are in the dict with ID as key
+            # Update prompt in TextEncodeQwen nodes if prompt is provided
+            if prompt and prompt.strip():
+                for node_id, node_data in workflow.items():
+                    if not isinstance(node_data, dict):
+                        continue
+                    class_type = node_data.get("class_type", "")
+                    if "TextEncodeQwen" in class_type:
+                        if "inputs" in node_data:
+                            node_data["inputs"]["prompt"] = prompt
+                            logging.info(f"API workflow: Set prompt to: {prompt[:50]}...")
+            return workflow
+        
+        # Frontend format - has "nodes" list
         nodes = workflow.get("nodes", [])
         
-        # Find nodes by type and modify values
         for node in nodes:
             node_type = node.get("type", "")
             
             # Find TextEncodeQwenImageEdit node (prompt input)
-            if node_type == "TextEncodeQwenImageEdit":
+            if "TextEncodeQwen" in node_type:
                 widgets = node.get("widgets_values", [])
-                if widgets:
-                    # First widget is the prompt text
+                if widgets and prompt and prompt.strip():
                     node["widgets_values"][0] = prompt
                     logging.info(f"Set prompt: {prompt[:50]}...")
             
-            # Find LoadImage node
+            # Find LoadImage node - handled separately
             elif node_type == "LoadImage":
-                # We'll upload the image and set the filename
                 pass
         
         return workflow
@@ -201,7 +223,21 @@ class ComfyUIExecutor:
             return None
     
     def update_loadimage_nodes(self, workflow: Dict, image_filename: str) -> Dict:
-        """Update LoadImage nodes to use uploaded image"""
+        """Update LoadImage nodes to use uploaded image. Supports both formats."""
+        
+        # Check if API format (dict with numeric string keys)
+        if "nodes" not in workflow and any(k.isdigit() for k in workflow.keys()):
+            # API format - nodes are in the dict with ID as key
+            for node_id, node_data in workflow.items():
+                if not isinstance(node_data, dict):
+                    continue
+                if node_data.get("class_type") == "LoadImage":
+                    if "inputs" in node_data:
+                        node_data["inputs"]["image"] = image_filename
+                        logging.info(f"Set LoadImage to: {image_filename}")
+            return workflow
+        
+        # Frontend format - has "nodes" list
         nodes = workflow.get("nodes", [])
         
         for node in nodes:
@@ -212,6 +248,7 @@ class ComfyUIExecutor:
                     logging.info(f"Set LoadImage to: {image_filename}")
         
         return workflow
+
     
     def resolve_setget_nodes(self, workflow: Dict) -> Dict:
         """
@@ -223,9 +260,17 @@ class ComfyUIExecutor:
         2. Finds all GetNode nodes 
         3. Creates direct links from GetNode destinations to SetNode sources
         4. Removes SetNode/GetNode from the workflow
+        
+        NOTE: If workflow is already in API format (no "nodes" list), skip this step.
         """
+        # Check if API format - no nodes list, just dict with numeric keys
+        if "nodes" not in workflow and any(k.isdigit() for k in workflow.keys()):
+            # Already API format - no SetNode/GetNode to resolve
+            return workflow
+        
         nodes = workflow.get("nodes", [])
         links = workflow.get("links", [])
+
         
         # Build node lookup
         node_by_id = {n["id"]: n for n in nodes}
@@ -403,9 +448,17 @@ class ComfyUIExecutor:
         - class_type: node type name
         - inputs: dict of input_name -> value or [node_id, slot]
         
-        Widget values from UI need to be mapped to their input names.
+        NOTE: If workflow is already in API format (no "nodes" list), return as-is.
         """
+        # Check if already API format - no nodes list, just dict with numeric keys
+        if "nodes" not in workflow and any(k.isdigit() for k in workflow.keys()):
+            # Already API format - return as-is
+            logging.info("Workflow already in API format, skipping conversion")
+            return workflow
+        
+        # Widget values from UI need to be mapped to their input names.
         api_workflow = {}
+
         
         nodes = workflow.get("nodes", [])
         links = workflow.get("links", [])
@@ -613,7 +666,7 @@ class ComfyUIExecutor:
     def wait_for_result(
         self, 
         prompt_id: str, 
-        timeout: int = 300,
+        timeout: int = 600,  # Increased for HiresFix workflows
         progress_callback: Optional[Callable[[int, str], None]] = None,
         preview_callback: Optional[Callable[[str, int], None]] = None  # (base64, step)
     ) -> Optional[bytes]:
@@ -653,16 +706,22 @@ class ComfyUIExecutor:
                                 # Extract image data (skip first 8 bytes header)
                                 image_data = msg[8:]
                                 
-                                # Convert to base64 and resize for preview
+                                # Convert to base64 - keep reasonable size for preview
                                 img = Image.open(io.BytesIO(image_data))
                                 
-                                # Resize to half for faster transfer
+                                # Scale preview to reasonable size while maintaining aspect ratio
                                 w, h = img.size
-                                preview_img = img.resize((max(256, w // 2), max(256, h // 2)), Image.LANCZOS)
+                                # Target: keep longest side at 75% but minimum 512px
+                                max_dim = max(w, h)
+                                target_dim = max(512, int(max_dim * 0.75))
+                                scale = target_dim / max_dim
+                                preview_w = int(w * scale)
+                                preview_h = int(h * scale)
+                                preview_img = img.resize((preview_w, preview_h), Image.LANCZOS)
                                 
                                 # Convert to JPEG base64
                                 buffer = io.BytesIO()
-                                preview_img.save(buffer, format='JPEG', quality=70)
+                                preview_img.save(buffer, format='JPEG', quality=75)
                                 preview_b64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
                                 
                                 preview_callback(preview_b64, current_step)
@@ -695,13 +754,19 @@ class ComfyUIExecutor:
                             break
                     
                     elif msg_type == "execution_error":
-                        logging.error(f"Execution error: {msg_data}")
+                        error_msg = msg_data.get("exception_message", "Unknown error")
+                        node_id = msg_data.get("node_id", "?")
+                        node_type = msg_data.get("node_type", "?")
+                        logging.error(f"ComfyUI execution error in node {node_id} ({node_type}): {error_msg}")
                         ws.close()
-                        return None
+                        raise RuntimeError(f"ComfyUI error in {node_type}: {error_msg}")
                         
                 except websocket.WebSocketTimeoutException:
                     # Timeout on recv, continue polling
                     pass
+                except RuntimeError:
+                    # Re-raise our explicit errors
+                    raise
                 except Exception as e:
                     logging.debug(f"WS recv error: {e}")
             
@@ -800,6 +865,12 @@ class ComfyUIExecutor:
         self,
         image: Image.Image,
         prompt: str,
+        use_hires_fix: bool = False,
+        hires_fix_mode: str = "normal",
+        denoise: float = 0.6,
+        sdxl_saturation: float = 0.2,
+        sdxl_steps: int = 8,
+        sdxl_denoise: float = 0.7,
         progress_callback: Optional[Callable[[int, str], None]] = None,
         preview_callback: Optional[Callable[[str, int], None]] = None  # (base64, step)
     ) -> Optional[Image.Image]:
@@ -809,6 +880,9 @@ class ComfyUIExecutor:
         Args:
             image: Input PIL Image
             prompt: Text prompt for transformation
+            use_hires_fix: If True, use HiresFix workflow (2x upscale + refine)
+            hires_fix_mode: "normal" or "advanced"
+            denoise: Denoise strength for KSampler (0.0-1.0), lower = closer to original
             progress_callback: Optional callback(progress_percent, status_text)
             preview_callback: Optional callback(base64_image, step) for live preview
             
@@ -834,12 +908,23 @@ class ComfyUIExecutor:
             return None
         
         if progress_callback:
-            progress_callback(15, "Preparing workflow...")
+            # Determine which base workflow to use
+            # If Advanced HiresFix, use the dedicated HiresFix workflow
+            # If Normal HiresFix or No HiresFix, use the Normal workflow (we chain manually for Normal)
+            use_integrated_hires = use_hires_fix and hires_fix_mode == "advanced"
+            wf_name = "HiresFix (Advanced)" if use_integrated_hires else "Normal"
+            progress_callback(15, f"Preparing {wf_name} workflow...")
         
         # Load and prepare workflow
-        workflow = self.load_workflow()
+        use_integrated_hires = use_hires_fix and hires_fix_mode == "advanced"
+        workflow = self.load_workflow(use_hires_fix=use_integrated_hires)
         workflow = self.prepare_workflow(workflow, "", prompt)
         workflow = self.update_loadimage_nodes(workflow, uploaded_name)
+        
+        # Apply denoise to first KSampler (node 560)
+        if "560" in workflow and "inputs" in workflow["560"]:
+            workflow["560"]["inputs"]["denoise"] = denoise
+            logging.info(f"Applied denoise={denoise} to KSampler node 560")
         
         # Resolve SetNode/GetNode virtual links (frontend-only nodes)
         workflow = self.resolve_setget_nodes(workflow)
@@ -863,12 +948,149 @@ class ComfyUIExecutor:
         # Wait for result
         def internal_progress(p, msg):
             if progress_callback:
+                # Map 0-100 to 25-95 (leave room for potential second pass)
+                end_range = 50 if (use_hires_fix and hires_fix_mode == "normal") else 95
+                overall = 25 + int(p * (end_range - 25) / 100)
+                progress_callback(overall, msg)
+        
+        result_bytes = self.wait_for_result(
+            prompt_id, 
+            progress_callback=internal_progress,
+            preview_callback=preview_callback
+        )
+        
+        if not result_bytes:
+            return None
+            
+        result_image = Image.open(io.BytesIO(result_bytes))
+        
+        # === Step 2: Hires Fix Normal (Chained SDXL Tiled Upscale x1) ===
+        if use_hires_fix and hires_fix_mode == "normal":
+            logging.info("Starting HiresFix Normal (SDXL Tiled x1) pass...")
+            
+            def hires_progress(p, msg):
+                if progress_callback:
+                    # Map 0-100 to 50-100
+                    overall = 50 + int(p * 0.5)
+                    progress_callback(overall, f"HiresFix: {msg}")
+            
+            # Execute SDXL Tiled Upscale x1
+            result_image = self.execute_sdxl_tiled_upscale(
+                result_image, 
+                scale_factor=1, 
+                sdxl_saturation=sdxl_saturation,
+                sdxl_steps=sdxl_steps,
+                sdxl_denoise=sdxl_denoise,
+                progress_callback=hires_progress,
+                preview_callback=preview_callback
+            )
+            
+        return result_image
+    
+    def execute_sdxl_tiled_upscale(
+        self,
+        image: Image.Image,
+        scale_factor: int = 2,
+        sdxl_saturation: float = 0.2,
+        sdxl_steps: int = 8,
+        sdxl_denoise: float = 0.7,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        preview_callback: Optional[Callable[[str, int], None]] = None
+    ) -> Optional[Image.Image]:
+        """
+        Execute SDXL Realistic Advanced Tiled Upscale workflow.
+        
+        This workflow uses:
+        - AnalogMadness SDXL checkpoint
+        - SDXL Lightning 8-step LoRA for fast inference
+        - Tile ControlNet for detail preservation
+        - 2x2 tiling for memory efficiency
+        - Film grain and sharpening post-processing
+        
+        Args:
+            image: Input PIL Image
+            progress_callback: Optional callback(progress_percent, status_text)
+            preview_callback: Optional callback(base64_image, step) for live preview
+            
+        Returns:
+            Result PIL Image (2x upscaled) or None
+        """
+        if progress_callback:
+            progress_callback(5, "Starting ComfyUI...")
+        
+        # Ensure server is running
+        if not self.start_server():
+            logging.error("Failed to start ComfyUI")
+            return None
+        
+        if progress_callback:
+            progress_callback(10, "Uploading image...")
+        
+        # Upload image
+        img_name = f"input_{uuid.uuid4().hex[:8]}.png"
+        uploaded_name = self.upload_image(image, img_name)
+        if not uploaded_name:
+            logging.error("Failed to upload image")
+            return None
+        
+        if progress_callback:
+            progress_callback(15, "Preparing SDXL Tiled Upscale workflow...")
+        
+        # Load workflow
+        logging.info(f"Loading workflow: {WORKFLOW_SDXL_TILED_UPSCALE.name}")
+        with open(WORKFLOW_SDXL_TILED_UPSCALE, 'r', encoding='utf-8') as f:
+            workflow = json.load(f)
+        
+        # Update LoadImage node (node "129") with input image
+        workflow = self.update_loadimage_nodes(workflow, uploaded_name)
+        
+        # Update Scale Factor
+        if "114:47" in workflow and "inputs" in workflow["114:47"]:
+            workflow["114:47"]["inputs"]["scale_by"] = scale_factor
+            logging.info(f"Updated SDXL upscale factor to {scale_factor}x")
+
+        # Update Saturation (FastFilmGrain - Node 100)
+        if "100" in workflow and "inputs" in workflow["100"]:
+            workflow["100"]["inputs"]["saturation_mix"] = sdxl_saturation
+            logging.info(f"Updated SDXL Saturation Mix to {sdxl_saturation}")
+
+        # Update Steps and Denoise for all KSamplers
+        # Identified KSamplers: 114:23, 114:19, 114:58
+        target_ksamplers = ["114:23", "114:19", "114:58"]
+        for node_id in target_ksamplers:
+            if node_id in workflow and "inputs" in workflow[node_id]:
+                workflow[node_id]["inputs"]["steps"] = sdxl_steps
+                workflow[node_id]["inputs"]["denoise"] = sdxl_denoise
+        logging.info(f"Updated SDXL KSamplers (Steps: {sdxl_steps}, Denoise: {sdxl_denoise})")
+        
+        # Resolve SetNode/GetNode virtual links (frontend-only nodes)
+        workflow = self.resolve_setget_nodes(workflow)
+        
+        # Convert to API format
+        api_workflow = self.convert_to_api_format(workflow)
+        
+        if progress_callback:
+            progress_callback(20, "Queuing...")
+        
+        # Queue prompt
+        prompt_id = self.queue_prompt(api_workflow)
+        if not prompt_id:
+            logging.error("Failed to queue prompt")
+            return None
+        
+        if progress_callback:
+            progress_callback(25, "Processing with SDXL Tiled Upscale...")
+        
+        # Wait for result
+        def internal_progress(p, msg):
+            if progress_callback:
                 # Map 0-100 to 25-95
                 overall = 25 + int(p * 0.7)
                 progress_callback(overall, msg)
         
         result_bytes = self.wait_for_result(
             prompt_id, 
+            timeout=900,  # 15 minutes for large images
             progress_callback=internal_progress,
             preview_callback=preview_callback
         )
@@ -895,23 +1117,56 @@ def get_executor() -> ComfyUIExecutor:
 def make_it_real(
     image: Image.Image,
     prompt: str = "convert to photorealistic, raw photo, dslr quality",
+    use_hires_fix: bool = False,
+    hires_fix_mode: str = "normal",
+    denoise: float = 0.6,
+    sdxl_saturation: float = 0.2,
+    sdxl_steps: int = 8,
+    sdxl_denoise: float = 0.7,
     progress_callback: Optional[Callable[[int, str], None]] = None,
     preview_callback: Optional[Callable[[str, int], None]] = None  # (base64, step)
 ) -> Optional[Image.Image]:
     """
     Main entry point for Make it Real feature.
+    """
+    executor = get_executor()
+    return executor.execute(
+        image, prompt, use_hires_fix, hires_fix_mode, denoise, 
+        sdxl_saturation, sdxl_steps, sdxl_denoise,
+        progress_callback, preview_callback
+    )
+
+
+def sdxl_tiled_upscale(
+    image: Image.Image,
+    scale_factor: int = 2,
+    sdxl_saturation: float = 0.2,
+    sdxl_steps: int = 8,
+    sdxl_denoise: float = 0.7,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    preview_callback: Optional[Callable[[str, int], None]] = None
+) -> Optional[Image.Image]:
+    """
+    Entry point for SDXL Tiled Upscale.
     
     Args:
         image: Input PIL Image
-        prompt: Transformation prompt
+        scale_factor: Upscale factor (e.g., 2 for 2x)
+        sdxl_saturation: Saturation mix for FastFilmGrain node
+        sdxl_steps: Number of steps for KSamplers
+        sdxl_denoise: Denoise value for KSamplers
         progress_callback: Optional progress callback
         preview_callback: Optional callback(base64_image, step) for live preview
         
     Returns:
-        Transformed PIL Image or None
+        2x Upscaled PIL Image or None
     """
     executor = get_executor()
-    return executor.execute(image, prompt, progress_callback, preview_callback)
+    return executor.execute_sdxl_tiled_upscale(
+        image, scale_factor, 
+        sdxl_saturation, sdxl_steps, sdxl_denoise,
+        progress_callback, preview_callback
+    )
 
 
 if __name__ == "__main__":

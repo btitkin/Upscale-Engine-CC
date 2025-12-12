@@ -1,0 +1,429 @@
+{
+  "3": {
+    "inputs": {
+      "image": "image (10).png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Reference Image"
+    }
+  },
+  "4": {
+    "inputs": {
+      "ckpt_name": "hardcoreAsianCosplay_xlV10.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Load Checkpoint"
+    }
+  },
+  "6": {
+    "inputs": {
+      "stop_at_clip_layer": -2,
+      "clip": [
+        "4",
+        1
+      ]
+    },
+    "class_type": "CLIPSetLastLayer",
+    "_meta": {
+      "title": "CLIP Set Last Layer"
+    }
+  },
+  "9": {
+    "inputs": {
+      "strength": 0.4,
+      "start_percent": 0,
+      "end_percent": 1,
+      "positive": [
+        "34",
+        0
+      ],
+      "negative": [
+        "34",
+        1
+      ],
+      "control_net": [
+        "772",
+        0
+      ],
+      "image": [
+        "733",
+        0
+      ]
+    },
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": {
+      "title": "Apply ControlNet (Depth)"
+    }
+  },
+  "22": {
+    "inputs": {
+      "pixels": [
+        "23",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE Encode"
+    }
+  },
+  "23": {
+    "inputs": {
+      "side_length": 1536,
+      "side": "Longest",
+      "upscale_method": "lanczos",
+      "crop": "disabled",
+      "image": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "DF_Image_scale_to_side",
+    "_meta": {
+      "title": "Image scale to side"
+    }
+  },
+  "27": {
+    "inputs": {
+      "text": [
+        "626",
+        0
+      ],
+      "token_normalization": "none",
+      "weight_interpretation": "comfy",
+      "clip": [
+        "388",
+        1
+      ]
+    },
+    "class_type": "BNK_CLIPTextEncodeAdvanced",
+    "_meta": {
+      "title": "CLIP Text Encode (Advanced)"
+    }
+  },
+  "34": {
+    "inputs": {
+      "strength": 0.05,
+      "start_percent": 0,
+      "end_percent": 1,
+      "positive": [
+        "739",
+        0
+      ],
+      "negative": [
+        "27",
+        0
+      ],
+      "control_net": [
+        "771",
+        0
+      ],
+      "image": [
+        "35",
+        0
+      ]
+    },
+    "class_type": "ControlNetApplyAdvanced",
+    "_meta": {
+      "title": "Apply ControlNet (LineArt)"
+    }
+  },
+  "35": {
+    "inputs": {
+      "coarse": "enable",
+      "resolution": 1024,
+      "image": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "LineArtPreprocessor",
+    "_meta": {
+      "title": "Realistic Lineart"
+    }
+  },
+  "39": {
+    "inputs": {
+      "samples": [
+        "560",
+        0
+      ],
+      "vae": [
+        "4",
+        2
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "352": {
+    "inputs": {
+      "model": "wd-vit-tagger-v3",
+      "threshold": 0.25,
+      "character_threshold": 0.25,
+      "replace_underscore": "digital art,  greyscale, monochrome, game cg, 2D animation, anime, cartoon, 3d art, 3d, mosaic, masking, watermark, signature, sketch, drawing, cartoon",
+      "trailing_comma": true,
+      "exclude_tags": [
+        "623",
+        0
+      ],
+      "tags": "shihouin yoruichi, 1girl, solo, long hair, breasts, looking at viewer, large breasts, navel, cleavage, bare shoulders, standing, jacket, collarbone, yellow eyes, swimsuit, purple hair, ponytail, thighs, cowboy shot, bikini, sweat, parted lips, open clothes, hood, dark skin, stomach, grey background, dark-skinned female, parted bangs, lips, shiny skin, muscular, hoodie, black bikini, highleg, thick thighs, abs, high ponytail, toned, muscular female, highleg bikini, very dark skin, two-tone bikini, orange hoodie, ",
+      "image": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "WD14Tagger|pysssss",
+    "_meta": {
+      "title": "WD14 Tagger 🐍"
+    }
+  },
+  "354": {
+    "inputs": {
+      "THRESHOLD": 0.3,
+      "addTag": "",
+      "removeTag": [
+        "623",
+        0
+      ],
+      "image": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "CXH_JoyTag",
+    "_meta": {
+      "title": "CXH_JoyTag"
+    }
+  },
+  "388": {
+    "inputs": {
+      "switch": "On",
+      "lora_name": "Super_Skin_Detailer_By_Stable_Yogi_SD0_V1.safetensors",
+      "strength_model": 1,
+      "strength_clip": 0.45,
+      "model": [
+        "4",
+        0
+      ],
+      "clip": [
+        "6",
+        0
+      ]
+    },
+    "class_type": "CR Load LoRA",
+    "_meta": {
+      "title": "💊 CR Load LoRA (Optional)"
+    }
+  },
+  "560": {
+    "inputs": {
+      "seed": [
+        "653",
+        0
+      ],
+      "steps": 30,
+      "cfg": 2,
+      "sampler_name": "dpmpp_2s_ancestral",
+      "scheduler": "karras",
+      "denoise": 0.8,
+      "model": [
+        "388",
+        0
+      ],
+      "positive": [
+        "9",
+        0
+      ],
+      "negative": [
+        "9",
+        1
+      ],
+      "latent_image": [
+        "22",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "623": {
+    "inputs": {
+      "prompt": "2D_animation,digital_art,game_cg,masking,anime,painting,hand_drawing,fantasy_art,cartoon,3d_art,3d,mosaic,watermark,signature,illustration,sketch,drawing,greyscale,monochrome,anime,blurry,official_art,blurry_background,depth_of_field,2D animation,digital art,game cg,hand drawing,fantasy art,3d art,official art,blurry background,depth of field,jpeg artifacts,jpeg_artifacts,eyebrows_visible_through_hair,eyebrows visible through hair,pixel_art,pixel art,simple_background,simple background,out-of-frame_censoring,web address,censored,artist name,commission,patreon_username,patreon username,artist_name,black_border,original,heart_censor,heart censor,chibi,lineart,comic,indie_virtual_youtuber,indie virtual youtuber,virtual_youtuber,virtual youtuber,character_name,character name,paid_reward,paid reward,skeb_commission,skeb commission,weibo_username,weibo username,motion_lines,motion lines,borrowed_character,borrowed character,gumroad username,gumroad_username,meme,realistic,photorealistic,dated,flying sweatdrops,flying_sweatdrops,twitter username,twitter_username,subtitled,drawing (object),drawing_(object),bar censor,bar_censor,afterimage,english text,english_text,copyright_name,copyright name,cover,cover_page,cover page,speech bubble,speech_bubble,segmented_comic,segmented comic,western comics (style),western_comics_(style),letterboxed,colored pencil (medium),colored_pencil_(medium),romaji text,romaji_text,time paradox,time_paradox,blurry foreground,blurry_foreground,chinese text,chinese_text,parody,greyscale with colored background,greyscale_with_colored_background,partially colored,partially_colored,white border,white_border,border,profanity,hatching_(texture),hatching (texture),pillarboxed,animification,instagram logo,instagram_logo,twitter logo,twitter_logo,patreon logo,patreon_logo,traditional_media,traditional media,dot nose,dot_nose,what,chromatic aberration,chromatic_aberration, big_eyes, big eyes, large eyes, anime_eyes, anime eyes,\nchibi, chibi_face, chibi face,\nsmooth_plastic_skin, smooth plastic skin,\nround_face, round face, small_nose, small nose,\npointy_chin, pointy chin, sharp_chin, sharp chin,\nstylized_face, stylized face, smiling, happy,\nexaggerated_proportions, exaggerated proportions,\nyouthful_face, youthful face,\nchildlike_face, childlike face,\nkawaii, moe, bishoujo, bishojou,\ncute_girl, cute girl,\ndoll_like, doll like, doll_face, doll face,\ncatlike_eyes, catlike eyes,\nwide_eye_spacing, wide eye spacing,\n"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "Exclude tags WD14 & JoyTag"
+    }
+  },
+  "626": {
+    "inputs": {
+      "prompt": "score_6,score_5,score_4, (source_anime,source_furry,source_pony,source_cartoon:1.3),(bokeh,lens blur,blurry:1.1),ugly,jpeg artifacts,watermark,signature,\n"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "627": {
+    "inputs": {
+      "separator": "",
+      "text1": [
+        "352",
+        0
+      ],
+      "text2": [
+        "354",
+        0
+      ]
+    },
+    "class_type": "CR Text Concatenate",
+    "_meta": {
+      "title": "Tags"
+    }
+  },
+  "635": {
+    "inputs": {
+      "delimiter": "",
+      "clean_whitespace": "true",
+      "text_a": [
+        "638",
+        0
+      ],
+      "text_b": [
+        "769",
+        0
+      ],
+      "text_c": [
+        "627",
+        0
+      ],
+      "text_d": [
+        "643",
+        0
+      ]
+    },
+    "class_type": "Text Concatenate",
+    "_meta": {
+      "title": "Text Concatenate"
+    }
+  },
+  "638": {
+    "inputs": {
+      "prompt": "realistic face, real eyes, realistic, (real,realistic,raw,photo,source_realistic:1.8), realistic body, keep same body skin color,"
+    },
+    "class_type": "CR Prompt Text",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "643": {
+    "inputs": {
+      "value": ":0.9)"
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "Tags Weight"
+    }
+  },
+  "653": {
+    "inputs": {
+      "seed": 359286824934516
+    },
+    "class_type": "CR Seed",
+    "_meta": {
+      "title": "🌱 CR Seed"
+    }
+  },
+  "733": {
+    "inputs": {
+      "ckpt_name": "depth_anything_v2_vitl.pth",
+      "resolution": 1024,
+      "image": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "DepthAnythingV2Preprocessor",
+    "_meta": {
+      "title": "Depth Anything V2 - Relative"
+    }
+  },
+  "739": {
+    "inputs": {
+      "text": [
+        "635",
+        0
+      ],
+      "token_normalization": "none",
+      "weight_interpretation": "comfy",
+      "clip": [
+        "388",
+        1
+      ]
+    },
+    "class_type": "BNK_CLIPTextEncodeAdvanced",
+    "_meta": {
+      "title": "CLIP Text Encode (Advanced)"
+    }
+  },
+  "769": {
+    "inputs": {
+      "value": ",("
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "Tags Start"
+    }
+  },
+  "771": {
+    "inputs": {
+      "control_net_name": "controlnet-union-sdxl-1.0-promax.safetensors"
+    },
+    "class_type": "ControlNetLoader",
+    "_meta": {
+      "title": "Load ControlNet Model"
+    }
+  },
+  "772": {
+    "inputs": {
+      "control_net_name": "controlnet-union-sdxl-1.0-promax.safetensors"
+    },
+    "class_type": "ControlNetLoader",
+    "_meta": {
+      "title": "Load ControlNet Model"
+    }
+  },
+  "788": {
+    "inputs": {
+      "Text": "iniverseMixSFWNSFW_ponyRealGuofenV51 - dpmpp_2m_sde - karras - 6.0cfg - 30steps\ndonutsdeliverymixV4_v41 - dpmpp_2m_sde - karras - 6.0cfg - 30steps\ncyberrealistic_v70 - dpmpp_2m_sde - karras - 3.0cfg - 30steps\ncyberrealisticPony_v141 - dpmpp_2m_sde - karras - 3.0cfg - 30steps\n1girlPrinter20_v10 - dpmpp_2m_sde - karras - 3.0cfg - 30steps"
+    },
+    "class_type": "DF_Text_Box",
+    "_meta": {
+      "title": "Text Box"
+    }
+  },
+  "798": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  }
+}

@@ -3,7 +3,7 @@
     right: 0;
     top: 40px;
     /* Below TitleBar */
-    bottom: 24px;
+    bottom: 80px;
     /* Above status bar */
     width: 400px;
     background: linear-gradient(to left, #0a0a0a 0%, #0d0d0d 100%);

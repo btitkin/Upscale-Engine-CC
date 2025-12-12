@@ -153,6 +153,27 @@ export default function MetadataPanel({ imageUrl, filename, collapsed, onToggle 
                 </button>
             </div>
 
+            {/* Collapsed Hint - Stacked vertical letters */}
+            {collapsed && (
+                <div
+                    className="flex-1 flex flex-col items-center justify-center cursor-pointer group gap-3"
+                    onClick={onToggle}
+                    title={isEmpty ? "No metadata in this image" : "Click to view image metadata"}
+                >
+                    {'METADATA'.split('').map((letter, i) => (
+                        <span
+                            key={i}
+                            className={`text-[23px] font-bold leading-none transition-colors ${isEmpty ? 'text-white/30' : 'text-emerald-400/80 group-hover:text-emerald-300'}`}
+                        >
+                            {letter}
+                        </span>
+                    ))}
+                    {!isEmpty && (
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-2 animate-pulse" />
+                    )}
+                </div>
+            )}
+
             {!collapsed && (
                 <div className="panel-content">
                     {isEmpty ? (

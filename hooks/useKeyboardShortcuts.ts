@@ -9,9 +9,13 @@ interface KeyboardShortcuts {
     onClose?: () => void;
     onSelectAll?: () => void;
     onDeselectAll?: () => void;
+    onUndo?: () => void;
+    onRedo?: () => void;
+    onToggleOriginal?: () => void;
     isProcessing?: boolean;
     hasQueue?: boolean;
     hasResults?: boolean;
+    hasHistory?: boolean;
 }
 
 /**
@@ -24,6 +28,9 @@ interface KeyboardShortcuts {
  * - Arrow Left/Right: Navigate results
  * - Ctrl+A: Select all in queue
  * - Ctrl+D: Deselect all
+ * - Ctrl+Z: Undo (history)
+ * - Ctrl+Shift+Z / Ctrl+Y: Redo (history)
+ * - O: Toggle Original/Enhanced view
  */
 export function useKeyboardShortcuts({
     onProcess,
@@ -34,9 +41,13 @@ export function useKeyboardShortcuts({
     onClose,
     onSelectAll,
     onDeselectAll,
+    onUndo,
+    onRedo,
+    onToggleOriginal,
     isProcessing = false,
     hasQueue = false,
-    hasResults = false
+    hasResults = false,
+    hasHistory = false
 }: KeyboardShortcuts) {
 
     const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -47,6 +58,30 @@ export function useKeyboardShortcuts({
         }
 
         const isCtrl = e.ctrlKey || e.metaKey;
+        const isShift = e.shiftKey;
+
+        // Ctrl+Z: Undo
+        if (isCtrl && e.key === 'z' && !isShift && !isProcessing) {
+            e.preventDefault();
+            onUndo?.();
+            return;
+        }
+
+        // Ctrl+Shift+Z or Ctrl+Y: Redo
+        if ((isCtrl && isShift && e.key === 'Z') || (isCtrl && e.key === 'y')) {
+            e.preventDefault();
+            if (!isProcessing) {
+                onRedo?.();
+            }
+            return;
+        }
+
+        // O: Toggle Original/Enhanced view
+        if (e.key === 'o' && !isCtrl && hasHistory && !isProcessing) {
+            e.preventDefault();
+            onToggleOriginal?.();
+            return;
+        }
 
         // Ctrl+O: Open files
         if (isCtrl && e.key === 'o') {
@@ -70,7 +105,7 @@ export function useKeyboardShortcuts({
         }
 
         // Space or Enter: Process
-        if ((e.key === ' ' || e.key === 'Enter') && hasQueue && !isProcessing) {
+        if ((e.key === ' ' || e.key === 'Enter') && (hasQueue || hasHistory) && !isProcessing) {
             e.preventDefault();
             onProcess?.();
             return;
@@ -102,7 +137,8 @@ export function useKeyboardShortcuts({
         }
     }, [
         onProcess, onCancel, onOpenFiles, onNextResult, onPrevResult,
-        onClose, onSelectAll, onDeselectAll, isProcessing, hasQueue, hasResults
+        onClose, onSelectAll, onDeselectAll, onUndo, onRedo, onToggleOriginal,
+        isProcessing, hasQueue, hasResults, hasHistory
     ]);
 
     useEffect(() => {
@@ -110,3 +146,4 @@ export function useKeyboardShortcuts({
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [handleKeyDown]);
 }
+

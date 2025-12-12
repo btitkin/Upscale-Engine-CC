@@ -15,7 +15,7 @@ echo [1/2] Starting Python Backend...
 echo.
 
 REM Start backend in background
-start "Upscale Engine Backend" cmd /k "cd backend && .venv\Scripts\activate && python server.py"
+start "Upscale Engine Backend" cmd /k "cd backend && .venv\Scripts\activate && python server.py --skip-deps"
 
 REM Wait for backend to be ready
 timeout /t 3 /nobreak > nul

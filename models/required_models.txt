@@ -1,28 +1,24 @@
 # Upscale Engine CC - Required Models Definition
 # ================================================
-# This file defines all required models for Make It Real functionality.
+# This file defines all required models for Make It Real SDXL functionality.
 # Format: relative_path|url|size_mb|description
 #
-# The install_dependencies.py reads this file to download models.
-# Add new models by adding lines in the same format.
+# The install_dependencies.py reads this file to check model availability.
+# These models are typically downloaded manually from CivitAI due to download restrictions.
 
-# CLIP Text Encoder (Qwen 2.5 VL)
-clip/qwen_2.5_vl_7b_fp8_scaled.safetensors|https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Instruct_fp8_e4m3fn_scaled/resolve/main/qwen2.5_vl_7b_fp8_scaled.safetensors|8948|Qwen 2.5 VL CLIP encoder (FP8)
+# ================== CHECKPOINTS ==================
+checkpoints/hardcoreAsianCosplay_xlV10.safetensors|MANUAL|6617|Main SDXL checkpoint for Make It Real workflow
+checkpoints/realvisxlV50_v50Bakedvae.safetensors|MANUAL|6617|RealVis XL checkpoint for HiresFix step
 
-# VAE
-vae/qwen_image_vae.safetensors|https://huggingface.co/Comfy-Org/Qwen2.5-VL-7B-Instruct_fp8_e4m3fn_scaled/resolve/main/qwen_image_vae.safetensors|242|Qwen Image VAE
+# ================== LORAS ==================
+loras/Super_Skin_Detailer_By_Stable_Yogi_SD0_V1.safetensors|MANUAL|109|Super Skin Detailer LoRA
 
-# UNET (GGUF Quantized)
-Qwen_Image_Edit-Q4_K_S.gguf|https://huggingface.co/City96/Qwen2-VL-Image-Editing-gguf/resolve/main/Qwen_Image_Edit-Q4_K_S.gguf|4400|Qwen Image Edit GGUF (Q4_K_S)
+# ================== CONTROLNET ==================
+controlnet/controlnet-union-sdxl-1.0-promax.safetensors|https://huggingface.co/xinsir/controlnet-union-sdxl-1.0/resolve/main/diffusion_pytorch_model_promax.safetensors|2397|ControlNet Union SDXL ProMax
+controlnet/diffusers_xl_depth_full.safetensors|https://huggingface.co/diffusers/controlnet-depth-sdxl-1.0/resolve/main/diffusion_pytorch_model.fp16.safetensors|2387|ControlNet Depth SDXL
 
-# LoRA - Lightning (faster generation, 4 steps)
-loras/Qwen-Image-Lightning-4steps-V1.0.safetensors|https://huggingface.co/Kijai/Qwen2-VL-Image-Editing-loras/resolve/main/Qwen-Image-Lightning-4steps-V1.0.safetensors|1620|Lightning LoRA for 4-step generation
-
-# LoRA - Anime to Realism
-loras/qwen anime into realism_base.safetensors|https://huggingface.co/Kijai/Qwen2-VL-Image-Editing-loras/resolve/main/qwen%20anime%20into%20realism_base.safetensors|563|Anime to Realism style transfer
-
-# ================== OPTIONAL MODELS ==================
-# Uncomment lines below to include additional models
-
-# Alternative GGUF (higher quality, larger file)
-# Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf|https://huggingface.co/City96/Qwen2-VL-Image-Editing-gguf/resolve/main/Qwen-Image-Edit-Plus-2509-Q3_K_M.gguf|6000|Qwen Image Edit Plus GGUF
+# ================== UPSCALERS ==================
+upscale_models/RealESRGAN_x4plus.pth|https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth|64|RealESRGAN x4plus upscaler
+upscale_models/RealSR_BSRGAN_SwinIR_L.pth|https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth|272|SwinIR-L x4 upscaler
+upscale_models/4x-UltraSharp.pth|https://github.com/Sirosky/Upscale-Hub/releases/download/main/4x-UltraSharp.pth|64|4x UltraSharp upscaler (used for HiresFix)
+upscale_models/GFPGANv1.4.pth|https://github.com/TencentARC/GFPGAN/releases/download/v1.3.4/GFPGANv1.4.pth|332|GFPGAN face enhancer

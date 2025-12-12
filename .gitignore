@@ -32,17 +32,21 @@ backend/engines/__pycache__/
 *.pyo
 *.pyd
 
-# Models (large files - download via install_dependencies.py)
-models/*.pth
-models/*.safetensors
-models/*.gguf
-models/*.temp
+# Models (large files - download via install_dependencies.py or in-app)
+# Exclude all model files but keep manifest and workflows
+models/**/*.pth
+models/**/*.safetensors
+models/**/*.gguf
+models/**/*.ckpt
+models/**/*.temp
+models/**/*.bin
 models/clip/
 models/vae/
 models/loras/
 models/unet/
 models/checkpoints/
-models/upscale_models/*.pth
+models/upscale_models/
+models/controlnet/
 
 # Temp files
 backend/__start_with_venv.bat

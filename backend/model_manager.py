@@ -78,12 +78,12 @@ class ModelManager:
         
         try:
             if model_key == "esrgan":
-                path = self.downloader.get_model_path("upscale")
+                path = self.downloader.get_model_path("upscale_esrgan")
                 if not path: raise FileNotFoundError("ESRGAN model not found")
                 engine = ESRGANEngine(str(path), device=self.device)
                 
             elif model_key == "swinir":
-                path = self.downloader.get_model_path("swinir")
+                path = self.downloader.get_model_path("upscale_swinir")
                 if not path: raise FileNotFoundError("SwinIR model not found")
                 engine = SwinIREngine(str(path), device=self.device)
                 
@@ -93,8 +93,9 @@ class ModelManager:
                 engine = SupResDiffGANEngine(str(path), device=self.device)
                 
             elif model_key == "sdxl":
-                path = self.downloader.get_model_path("sdxl")
-                if not path: raise FileNotFoundError("SDXL model not found")
+                # Use the main SDXL checkpoint (same as Make It Real)
+                path = self.downloader.get_model_path("checkpoint_makeitreal")
+                if not path: raise FileNotFoundError("SDXL model not found. Please ensure checkpoint_makeitreal is downloaded.")
                 engine = SDXLEngine(str(path)) # SDXL engine handles device internally usually, or we should pass it
                 # Checking SDXLEngine source... it usually auto-detects.
             

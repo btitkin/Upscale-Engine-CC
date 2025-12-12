@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Loader2, Server, Cpu, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Loader2, Cpu, CheckCircle2, AlertCircle, Zap } from 'lucide-react';
 
 interface LoadingScreenProps {
     onReady: () => void;
@@ -11,32 +11,61 @@ interface LoadingStep {
     label: string;
     status: 'pending' | 'loading' | 'done' | 'error';
     detail?: string;
+    progress?: number;
 }
 
 const LoadingScreen: React.FC<LoadingScreenProps> = ({ onReady, backendUrl }) => {
     const [steps, setSteps] = useState<LoadingStep[]>([
         { id: 'backend', label: 'Łączenie z backendem', status: 'pending' },
-        { id: 'comfyui', label: 'Uruchamianie ComfyUI', status: 'pending' },
+        { id: 'comfyui', label: 'Uruchamianie ComfyUI', status: 'pending', progress: 0 },
     ]);
 
     const [error, setError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
+    const [overallProgress, setOverallProgress] = useState(0);
+    const [elapsedTime, setElapsedTime] = useState(0);
+    const cancelledRef = useRef(false);
 
     const updateStep = (id: string, update: Partial<LoadingStep>) => {
         setSteps(prev => prev.map(s => s.id === id ? { ...s, ...update } : s));
     };
 
+    // Calculate overall progress
     useEffect(() => {
-        let cancelled = false;
+        const doneCount = steps.filter(s => s.status === 'done').length;
+        const loadingStep = steps.find(s => s.status === 'loading');
+        const stepProgress = loadingStep?.progress || 0;
+
+        const baseProgress = (doneCount / steps.length) * 100;
+        const partialProgress = (stepProgress / 100) * (100 / steps.length);
+        setOverallProgress(Math.round(baseProgress + partialProgress));
+    }, [steps]);
+
+    // Timer for elapsed time
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setElapsedTime(prev => prev + 1);
+        }, 1000);
+        return () => clearInterval(timer);
+    }, [retryCount]);
+
+    useEffect(() => {
+        cancelledRef.current = false;
 
         const initializeApp = async () => {
             try {
                 // Step 1: Check backend connection
-                updateStep('backend', { status: 'loading' });
+                updateStep('backend', { status: 'loading', detail: 'Sprawdzanie połączenia...' });
 
                 let backendReady = false;
                 for (let i = 0; i < 30; i++) {
-                    if (cancelled) return;
+                    if (cancelledRef.current) return;
+
+                    updateStep('backend', {
+                        detail: `Próba ${i + 1}/30...`,
+                        progress: Math.round((i / 30) * 100)
+                    });
+
                     try {
                         const res = await fetch(`${backendUrl}/status`, {
                             method: 'GET',
@@ -47,42 +76,61 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ onReady, backendUrl }) =>
                             break;
                         }
                     } catch {
+                        // Wait before retry
                         await new Promise(r => setTimeout(r, 1000));
                     }
                 }
 
                 if (!backendReady) {
-                    throw new Error('Nie można połączyć z backendem. Uruchom: python backend/server.py');
+                    throw new Error('Nie można połączyć z backendem. Uruchom: START_UPSCALE_ENGINE.bat');
                 }
 
-                updateStep('backend', { status: 'done', detail: 'Połączono' });
+                updateStep('backend', { status: 'done', detail: 'Połączono', progress: 100 });
 
-                // Step 2: Start ComfyUI
-                updateStep('comfyui', { status: 'loading', detail: 'Startowanie...' });
+                // Step 2: Start ComfyUI (single request, no polling)
+                updateStep('comfyui', { status: 'loading', detail: 'Startowanie serwera...', progress: 10 });
 
-                const startRes = await fetch(`${backendUrl}/comfyui/start`, {
-                    method: 'POST',
-                    signal: AbortSignal.timeout(120000) // 2 min timeout
-                });
+                // Single request to start ComfyUI - don't poll aggressively
+                try {
+                    const startRes = await fetch(`${backendUrl}/comfyui/start`, {
+                        method: 'POST',
+                        signal: AbortSignal.timeout(180000) // 3 min timeout
+                    });
 
-                if (!startRes.ok) {
-                    const errData = await startRes.json();
-                    throw new Error(errData.error || 'Błąd startowania ComfyUI');
+                    if (cancelledRef.current) return;
+
+                    if (!startRes.ok) {
+                        const errData = await startRes.json().catch(() => ({}));
+                        throw new Error(errData.error || 'Błąd startowania ComfyUI');
+                    }
+
+                    const startData = await startRes.json();
+
+                    if (startData.status === 'already_running') {
+                        updateStep('comfyui', { status: 'done', detail: 'Już aktywny', progress: 100 });
+                    } else {
+                        updateStep('comfyui', { status: 'done', detail: 'Uruchomiony', progress: 100 });
+                    }
+
+                } catch (err: any) {
+                    if (err.name === 'TimeoutError') {
+                        throw new Error('Timeout startowania ComfyUI (3 min). Sprawdź logi.');
+                    }
+                    throw err;
                 }
-
-                updateStep('comfyui', { status: 'done', detail: 'Aktywny' });
 
                 // All done!
-                await new Promise(r => setTimeout(r, 300));
-                if (!cancelled) {
+                if (!cancelledRef.current) {
+                    await new Promise(r => setTimeout(r, 500));
                     onReady();
                 }
 
             } catch (err: any) {
+                if (cancelledRef.current) return;
+
                 console.error('Init error:', err);
                 setError(err.message || 'Błąd inicjalizacji');
 
-                // Mark current loading step as error
                 setSteps(prev => prev.map(s =>
                     s.status === 'loading' ? { ...s, status: 'error' } : s
                 ));
@@ -91,13 +139,21 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ onReady, backendUrl }) =>
 
         initializeApp();
 
-        return () => { cancelled = true; };
-    }, [backendUrl, retryCount]);
+        return () => {
+            cancelledRef.current = true;
+        };
+    }, [backendUrl, retryCount, onReady]);
 
     const handleRetry = () => {
         setError(null);
-        setSteps(prev => prev.map(s => ({ ...s, status: 'pending', detail: undefined })));
+        setElapsedTime(0);
+        setSteps(prev => prev.map(s => ({ ...s, status: 'pending', detail: undefined, progress: 0 })));
         setRetryCount(r => r + 1);
+    };
+
+    const handleSkip = () => {
+        cancelledRef.current = true;
+        onReady();
     };
 
     return (
@@ -106,45 +162,68 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ onReady, backendUrl }) =>
                 {/* Logo / Title */}
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 mb-4">
-                        <Cpu className="w-8 h-8 text-white" />
+                        <Zap className="w-8 h-8 text-white" />
                     </div>
                     <h1 className="text-2xl font-bold text-white mb-2">Upscale Engine CC</h1>
                     <p className="text-white/50 text-sm">Inicjalizacja systemu AI...</p>
                 </div>
 
+                {/* Overall Progress */}
+                <div className="text-center mb-4">
+                    <span className="text-4xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                        {overallProgress}%
+                    </span>
+                    <span className="text-white/30 text-sm ml-2">({elapsedTime}s)</span>
+                </div>
+
                 {/* Loading Steps */}
                 <div className="bg-white/5 backdrop-blur-xl rounded-2xl border border-white/10 p-6 space-y-4">
-                    {steps.map((step, idx) => (
-                        <div key={step.id} className="flex items-center gap-4">
-                            {/* Icon */}
-                            <div className="w-8 h-8 flex items-center justify-center">
-                                {step.status === 'pending' && (
-                                    <div className="w-3 h-3 rounded-full bg-white/20" />
-                                )}
-                                {step.status === 'loading' && (
-                                    <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
-                                )}
-                                {step.status === 'done' && (
-                                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                                )}
-                                {step.status === 'error' && (
-                                    <AlertCircle className="w-5 h-5 text-red-400" />
+                    {steps.map((step) => (
+                        <div key={step.id} className="space-y-2">
+                            <div className="flex items-center gap-4">
+                                <div className="w-8 h-8 flex items-center justify-center">
+                                    {step.status === 'pending' && (
+                                        <div className="w-3 h-3 rounded-full bg-white/20" />
+                                    )}
+                                    {step.status === 'loading' && (
+                                        <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+                                    )}
+                                    {step.status === 'done' && (
+                                        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                                    )}
+                                    {step.status === 'error' && (
+                                        <AlertCircle className="w-5 h-5 text-red-400" />
+                                    )}
+                                </div>
+
+                                <div className="flex-1">
+                                    <div className={`text-sm font-medium ${step.status === 'done' ? 'text-white' :
+                                            step.status === 'loading' ? 'text-emerald-400' :
+                                                step.status === 'error' ? 'text-red-400' :
+                                                    'text-white/40'
+                                        }`}>
+                                        {step.label}
+                                    </div>
+                                    {step.detail && (
+                                        <div className="text-xs text-white/40">{step.detail}</div>
+                                    )}
+                                </div>
+
+                                {step.status === 'loading' && step.progress !== undefined && (
+                                    <span className="text-xs text-emerald-400 font-mono">
+                                        {step.progress}%
+                                    </span>
                                 )}
                             </div>
 
-                            {/* Label */}
-                            <div className="flex-1">
-                                <div className={`text-sm font-medium ${step.status === 'done' ? 'text-white' :
-                                    step.status === 'loading' ? 'text-emerald-400' :
-                                        step.status === 'error' ? 'text-red-400' :
-                                            'text-white/40'
-                                    }`}>
-                                    {step.label}
+                            {step.status === 'loading' && step.progress !== undefined && (
+                                <div className="ml-12 h-1 bg-white/10 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-emerald-500 transition-all duration-300"
+                                        style={{ width: `${step.progress}%` }}
+                                    />
                                 </div>
-                                {step.detail && (
-                                    <div className="text-xs text-white/40">{step.detail}</div>
-                                )}
-                            </div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -153,24 +232,36 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ onReady, backendUrl }) =>
                 {error && (
                     <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
                         <p className="text-red-400 text-sm mb-3">{error}</p>
-                        <button
-                            onClick={handleRetry}
-                            className="w-full py-2 px-4 bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
-                        >
-                            Spróbuj ponownie
-                        </button>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={handleRetry}
+                                className="flex-1 py-2 px-4 bg-white/10 hover:bg-white/20 text-white text-sm font-medium rounded-lg transition-colors"
+                            >
+                                Spróbuj ponownie
+                            </button>
+                            <button
+                                onClick={handleSkip}
+                                className="py-2 px-4 bg-white/5 hover:bg-white/10 text-white/60 text-sm rounded-lg transition-colors"
+                            >
+                                Pomiń
+                            </button>
+                        </div>
                     </div>
                 )}
 
-                {/* Progress bar at bottom */}
-                <div className="mt-6 h-1 bg-white/10 rounded-full overflow-hidden">
+                {/* Progress bar */}
+                <div className="mt-6 h-2 bg-white/10 rounded-full overflow-hidden">
                     <div
                         className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-all duration-500"
-                        style={{
-                            width: `${(steps.filter(s => s.status === 'done').length / steps.length) * 100}%`
-                        }}
+                        style={{ width: `${overallProgress}%` }}
                     />
                 </div>
+
+                {!error && (
+                    <p className="text-center text-white/30 text-xs mt-4">
+                        Pierwsze uruchomienie może trwać dłużej
+                    </p>
+                )}
             </div>
         </div>
     );

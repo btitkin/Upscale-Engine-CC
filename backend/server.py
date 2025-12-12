@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from model_downloader import ModelDownloader
 from model_manager import ModelManager
-from comfyui_executor import make_it_real as comfyui_make_it_real, get_executor
+from comfyui_executor import make_it_real as comfyui_make_it_real, get_executor, sdxl_tiled_upscale as comfyui_sdxl_upscale
 from video_service import is_video_file, get_video_info, extract_frames_to_base64
 
 app = Flask(__name__)
@@ -70,8 +70,8 @@ def get_status():
     
     # Determine which models are "ready" (downloaded)
     models_status = {
-        "esrgan": downloader.check_model_exists("upscale"),
-        "swinir": downloader.check_model_exists("swinir"),
+        "esrgan": downloader.check_model_exists("upscale_esrgan"),
+        "swinir": downloader.check_model_exists("upscale_swinir"),
         "supresdiffgan": downloader.check_model_exists("supresdiffgan"),
         "sdxl": downloader.check_model_exists("sdxl"),
         "qwen": downloader.check_model_exists("qwen"),
@@ -106,6 +106,29 @@ def get_models_status():
         "all_ready": len(missing) == 0,
         "missing": missing
     })
+
+@app.route('/cancel', methods=['POST'])
+def cancel_processing():
+    """Cancel current ComfyUI processing"""
+    try:
+        # Send interrupt signal to ComfyUI
+        comfyui_url = f"http://127.0.0.1:{COMFYUI_PORT}/interrupt"
+        response = requests.post(comfyui_url, timeout=5)
+        
+        if response.status_code == 200:
+            print("[Cancel] ComfyUI interrupt signal sent successfully")
+            return jsonify({"status": "cancelled", "message": "Processing cancelled"})
+        else:
+            print(f"[Cancel] ComfyUI returned status {response.status_code}")
+            return jsonify({"status": "error", "message": f"ComfyUI error: {response.status_code}"}), 500
+            
+    except requests.exceptions.ConnectionError:
+        # ComfyUI not running - nothing to cancel
+        print("[Cancel] ComfyUI not running, nothing to cancel")
+        return jsonify({"status": "ok", "message": "No active processing"})
+    except Exception as e:
+        print(f"[Cancel] Error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # Download progress state
 download_progress = {
@@ -605,7 +628,20 @@ def make_real():
         # Get prompt (custom or default)
         prompt = data.get('prompt', 'convert to photorealistic, raw photo, dslr quality')
         
-        print(f"[Make it Real] Request {request_id[:8]} - Prompt: {prompt[:50]}...")
+        # Get HiresFix setting
+        use_hires_fix = data.get('use_hires_fix', False)
+        hires_fix_mode = data.get('hires_fix_mode', 'normal')
+        
+        # Get denoise value for KSampler (default 0.6)
+        denoise = data.get('denoise', 0.6)
+        
+        # Get SDXL / HiresFix Advanced Settings
+        sdxl_saturation = data.get('sdxl_saturation', 0.2)
+        sdxl_steps = data.get('sdxl_steps', 8)
+        sdxl_denoise = data.get('sdxl_denoise', 0.7)
+
+        workflow_type = f"HiresFix ({hires_fix_mode})" if use_hires_fix else "Normal"
+        print(f"[Make it Real] Request {request_id[:8]} - Workflow: {workflow_type} - Denoise: {denoise} - SDXL Denoise: {sdxl_denoise}")
         
         update_progress(request_id, "🚀 Starting ComfyUI...", 5)
         
@@ -622,6 +658,13 @@ def make_real():
             result_image = comfyui_make_it_real(
                 input_image,
                 prompt=prompt,
+                use_hires_fix=use_hires_fix,
+                hires_fix_mode=hires_fix_mode,
+                denoise=denoise,
+                # Pass advanced SDXL params
+                sdxl_saturation=sdxl_saturation,
+                sdxl_steps=sdxl_steps,
+                sdxl_denoise=sdxl_denoise,
                 progress_callback=comfyui_progress,
                 preview_callback=preview_cb
             )
@@ -678,6 +721,85 @@ def make_real():
             
         except Exception as e:
             print(f"[Make it Real] ComfyUI error: {e}")
+            traceback.print_exc()
+            return jsonify({
+                "error": str(e),
+                "type": type(e).__name__,
+                "hint": "Make sure ComfyUI is properly installed"
+            }), 500
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+@app.route('/sdxl-upscale', methods=['POST'])
+def sdxl_tiled_upscale():
+    """SDXL Realistic Advanced Tiled Upscale - 2x enhancement with Tile ControlNet"""
+    try:
+        data = request.json
+        if not data or 'image' not in data:
+            return jsonify({"error": "No image provided"}), 400
+
+        # Decode image
+        image_data = base64.b64decode(data['image'])
+        input_image = Image.open(io.BytesIO(image_data)).convert('RGB')
+        
+        # Use client-provided ID or generate new one
+        request_id = data.get('request_id', str(uuid.uuid4()))
+        
+        print(f"[SDXL Upscale] Request {request_id[:8]} - Input size: {input_image.size}")
+        
+        update_progress(request_id, "🚀 Starting SDXL Tiled Upscale...", 5)
+        
+        # Progress callback for ComfyUI
+        def comfyui_progress(progress: int, status: str):
+            update_progress(request_id, f"🎨 {status}", progress)
+        
+        # Preview callback for live preview
+        def preview_cb(image_b64: str, step: int):
+            send_preview(request_id, image_b64, step)
+        
+        scale_factor = data.get('scale_factor', 2)
+        
+        # Get SDXL Advanced Settings
+        sdxl_saturation = data.get('sdxl_saturation', 0.2)
+        sdxl_steps = data.get('sdxl_steps', 8)
+        sdxl_denoise = data.get('sdxl_denoise', 0.7)
+
+        # Execute via ComfyUI
+        try:
+            result_image = comfyui_sdxl_upscale(
+                input_image,
+                scale_factor=scale_factor,
+                sdxl_saturation=sdxl_saturation,
+                sdxl_steps=sdxl_steps,
+                sdxl_denoise=sdxl_denoise,
+                progress_callback=comfyui_progress,
+                preview_callback=preview_cb
+            )
+            
+            if result_image is None:
+                return jsonify({
+                    "error": "SDXL Upscale processing failed",
+                    "hint": "Check ComfyUI logs for details"
+                }), 500
+            
+            # Convert result to base64
+            buffer = io.BytesIO()
+            result_image.save(buffer, format="PNG")
+            result_b64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            update_progress(request_id, "✓ Complete!", 100, "complete")
+            
+            return jsonify({
+                "request_id": request_id,
+                "image": result_b64,
+                "width": result_image.width,
+                "height": result_image.height
+            })
+            
+        except Exception as e:
+            print(f"[SDXL Upscale] ComfyUI error: {e}")
             traceback.print_exc()
             return jsonify({
                 "error": str(e),
@@ -837,13 +959,20 @@ def video_extract_frames():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
+    import sys
+    skip_deps = '--skip-deps' in sys.argv or '-s' in sys.argv
+    
     startup_sequence()
-    # Auto-install ComfyUI and custom nodes if missing
-    try:
-        from install_dependencies import check_and_install_dependencies
-        check_and_install_dependencies()
-    except Exception as e:
-        print(f"[Startup] Warning: Failed to check dependencies: {e}")
+    
+    # Auto-install ComfyUI and custom nodes if missing (skip with --skip-deps)
+    if not skip_deps:
+        try:
+            from install_dependencies import check_and_install_dependencies
+            check_and_install_dependencies()
+        except Exception as e:
+            print(f"[Startup] Warning: Failed to check dependencies: {e}")
+    else:
+        print("[Startup] Skipping dependency check (--skip-deps)")
 
     # Start the server
     PORT = 5555 # Default port
