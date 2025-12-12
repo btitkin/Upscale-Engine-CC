@@ -15,12 +15,14 @@ GFPGANv1.4.pth
 # -------------------------------------------
 # CHECKPOINTS (checkpoints/)
 # -------------------------------------------
-hardcoreAsianCosplay_xlV10.safetensors       # Main checkpoint for Make It Real
-realvisxlV50_v50Bakedvae.safetensors         # Checkpoint for HiresFix step
+analogMadnessSDXL_xl5.safetensors
+hardcoreAsianCosplay_xlV10.safetensors          # Main checkpoint for Make It Real
+realvisxlV50_v50Bakedvae.safetensors            # Checkpoint for HiresFix step
 
 # -------------------------------------------
 # LORAS (loras/)
 # -------------------------------------------
+sdxl_lightning_8step_lora.safetensors           # Lightning LoRA for fast inference
 Super_Skin_Detailer_By_Stable_Yogi_SD0_V1.safetensors
 
 # -------------------------------------------
@@ -28,6 +30,7 @@ Super_Skin_Detailer_By_Stable_Yogi_SD0_V1.safetensors
 # -------------------------------------------
 controlnet-union-sdxl-1.0-promax.safetensors    # ControlNet Union SDXL ProMax
 diffusers_xl_depth_full.safetensors             # Depth ControlNet
+xinsirOntrolnetTile_v10.safetensors             # Tile ControlNet for SDXL Upscale
 
 # ===========================================
 # NOTE: Large files are NOT included in git.
